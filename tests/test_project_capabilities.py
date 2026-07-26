@@ -37,7 +37,8 @@ class ProjectCapabilitiesTests(unittest.TestCase):
 
     def test_default_tool_budget_covers_a_skill_research_sequence(self):
         self.assertEqual(PurchaseConfig().max_tool_rounds, 10)
-        self.assertIn("绝不可声称", STABLE_PURCHASE_INSTRUCTIONS)
+        self.assertIn("必须先实际调用相应工具", STABLE_PURCHASE_INSTRUCTIONS)
+        self.assertNotIn("绝不可声称", STABLE_PURCHASE_INSTRUCTIONS)
 
     def test_runtime_uses_supplied_project_root_for_skills(self):
         project_root = Path(__file__).parents[1]
