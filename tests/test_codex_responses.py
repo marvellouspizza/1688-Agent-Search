@@ -12,6 +12,7 @@ from agent_search_1688.providers.codex_responses import (
 )
 from agent_search_1688.config import PurchaseConfig
 from agent_search_1688.prompt_builder import PurchasePromptBuilder
+from agent_search_1688.session_store import PurchaseSessionStore
 
 
 class CodexResponsesTests(unittest.TestCase):
@@ -26,7 +27,6 @@ class CodexResponsesTests(unittest.TestCase):
             "name": "web_search",
             "description": "Search public pages.",
             "parameters": {"type": "object", "properties": {}},
-            "strict": True,
         }])
 
     def test_local_auth_requires_chatgpt_tokens_without_exposing_them(self):
@@ -73,6 +73,24 @@ class CodexResponsesTests(unittest.TestCase):
         self.assertEqual(result.tool_calls[0].arguments, {"query": "construction gate"})
         self.assertEqual(result.response_items[0]["call_id"], "call_1")
         self.assertEqual(result.usage.total_tokens, 7)
+
+    def test_tool_trace_is_separate_from_chat_messages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = PurchaseSessionStore(Path(directory) / "sessions.db")
+            runtime = ProviderRuntime("local-codex-chatgpt", "gpt-test", "codex_responses", "https://example.invalid", "test")
+            session = store.create_or_restore_1688_purchase_session(None, runtime)
+            user, request_id = store.begin_1688_purchase_request(session.id, "hello", runtime)
+            store.append_1688_tool_trace(
+                session_id=session.id, request_id=request_id, sequence=1,
+                call_id="call_1", name="web_search", arguments_json='{"query":"x"}',
+                result_json='{"results":[]}', status="completed", duration_ms=4,
+            )
+            with store._connect() as connection:
+                trace = connection.execute("SELECT name, status FROM tool_traces").fetchone()
+                messages = connection.execute("SELECT role FROM messages").fetchall()
+            self.assertEqual(tuple(trace), ("web_search", "completed"))
+            self.assertEqual([row[0] for row in messages], ["user"])
+            store.close()
 
 
 if __name__ == "__main__":
