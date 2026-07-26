@@ -171,8 +171,12 @@ OpenAI API Key 也可以只通过 `OPENAI_API_KEY` 环境变量提供。
 PurchaseAgentRuntime.chat(user_input, session_id)
 ```
 
-## 测试
+## 测试分支
+
+为了让 `main` 分支保持精简，完整测试套件保存在
+`archive/with-tests` 分支：
 
 ```bash
+git switch archive/with-tests
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
