@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import time
@@ -285,27 +286,59 @@ class PurchaseAgentRuntime:
                 if signature in seen_calls:
                     raise PurchaseProviderError("模型重复调用相同工具，已停止")
                 seen_calls.add(signature)
-                started = time.monotonic()
-                try:
-                    result = self.tool_registry.dispatch(call.name, call.arguments)
-                    output = json.dumps(result, ensure_ascii=False)[:30_000]
-                    status = "completed"
-                except Exception as exc:
-                    output = json.dumps({"error": str(exc)[:1_000]}, ensure_ascii=False)
-                    status = "failed"
+            calls_with_sequence = list(zip(range(sequence - len(latest.tool_calls) + 1, sequence + 1), latest.tool_calls))
+            if len(calls_with_sequence) > 1 and all(
+                self.tool_registry.is_parallel_safe(call.name)
+                for _, call in calls_with_sequence
+            ):
+                with ThreadPoolExecutor(max_workers=len(calls_with_sequence)) as executor:
+                    futures = [
+                        (number, call, executor.submit(self._dispatch_1688_tool_call, call.name, call.arguments))
+                        for number, call in calls_with_sequence
+                    ]
+                    dispatched = [
+                        (number, call, *future.result())
+                        for number, call, future in futures
+                    ]
+            else:
+                dispatched = [
+                    (number, call, *self._dispatch_1688_tool_call(call.name, call.arguments))
+                    for number, call in calls_with_sequence
+                ]
+            for number, call, output, status, duration_ms in dispatched:
                 self.session_store.append_1688_tool_trace(
                     session_id=self.session.id,
                     request_id=request_id,
-                    sequence=sequence,
+                    sequence=number,
                     call_id=call.call_id,
                     name=call.name,
                     arguments_json=json.dumps(call.arguments, ensure_ascii=False),
                     result_json=output,
                     status=status,
-                    duration_ms=round((time.monotonic() - started) * 1000),
+                    duration_ms=duration_ms,
                 )
                 input_items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
         raise PurchaseProviderError("工具循环未产生最终回复")
+
+    def _dispatch_1688_tool_call(
+        self,
+        name: str,
+        arguments: dict,
+    ) -> tuple[str, str, int]:
+        started = time.monotonic()
+        try:
+            result = self.tool_registry.dispatch(name, arguments)
+            return (
+                json.dumps(result, ensure_ascii=False)[:30_000],
+                "completed",
+                round((time.monotonic() - started) * 1000),
+            )
+        except Exception as exc:
+            return (
+                json.dumps({"error": str(exc)[:1_000]}, ensure_ascii=False),
+                "failed",
+                round((time.monotonic() - started) * 1000),
+            )
 
     def switch_1688_purchase_model(self, model: str) -> None:
         if self.state is not ConversationState.IDLE:
@@ -369,7 +402,7 @@ def create_1688_purchase_agent(
     session_store: PurchaseSessionStore,
     cwd: Path,
 ) -> PurchaseAgentRuntime:
-    prompt_builder = PurchasePromptBuilder()
+    prompt_builder = PurchasePromptBuilder(cwd.resolve() / "skills")
     if provider_runtime.provider == CODEX_PROVIDER:
         from .providers import CodexResponsesProviderAdapter
 

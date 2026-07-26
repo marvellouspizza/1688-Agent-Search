@@ -164,7 +164,7 @@ class CodexResponsesProviderAdapter:
         payload: dict[str, Any] = {"model": self.provider_runtime.model, "instructions": self._instructions, "input": input_items, "store": False, "stream": True}
         tools = _responses_tools(tool_definitions)
         if tools:
-            payload.update({"tools": tools, "tool_choice": "auto", "parallel_tool_calls": False})
+            payload.update({"tools": tools, "tool_choice": "auto", "parallel_tool_calls": True})
         response_payload = self._request(payload)
         on_stream_started()
         output = response_payload.get("output")

@@ -15,6 +15,7 @@ class ToolEntry:
     description: str
     input_schema: dict[str, Any]
     handler: ToolHandler
+    parallel_safe: bool = False
 
     def as_mcp_definition(self) -> dict[str, Any]:
         return {
@@ -41,3 +42,7 @@ class ToolRegistry:
         if entry is None:
             raise KeyError(f"未注册工具：{name}")
         return entry.handler(arguments)
+
+    def is_parallel_safe(self, name: str) -> bool:
+        entry = self._entries.get(name)
+        return bool(entry and entry.parallel_safe)
