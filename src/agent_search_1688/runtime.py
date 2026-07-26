@@ -291,7 +291,7 @@ def create_1688_purchase_agent(
     session_store: PurchaseSessionStore,
     cwd: Path,
 ) -> PurchaseAgentRuntime:
-    prompt_builder = PurchasePromptBuilder()
+    prompt_builder = PurchasePromptBuilder(config)
     if provider_runtime.provider == CODEX_PROVIDER:
         provider_adapter: PurchaseProviderAdapter = CodexPurchaseProviderAdapter(
             provider_runtime,
