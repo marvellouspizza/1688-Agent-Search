@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from importlib import resources
-
-from .config import PurchaseConfig, get_1688_purchase_home
 from .models import Message, ProviderRuntime
+from .soul import load_or_seed_1688_soul
 
 
 STABLE_PURCHASE_INSTRUCTIONS = """\
@@ -16,31 +14,13 @@ STABLE_PURCHASE_INSTRUCTIONS = """\
 """
 
 class PurchasePromptBuilder:
-    def __init__(self, config: PurchaseConfig):
-        self.config = config
-
     def build_1688_purchase_base_instructions(self) -> str:
         return "\n\n".join(
             [
-                self._load_1688_soul(),
+                load_or_seed_1688_soul(),
                 STABLE_PURCHASE_INSTRUCTIONS.strip(),
             ]
         )
-
-    def _load_1688_soul(self) -> str:
-        profile = self.config.soul_profile
-        custom_path = get_1688_purchase_home() / "souls" / f"{profile}.md"
-        if custom_path.is_file():
-            return custom_path.read_text(encoding="utf-8").strip()
-        try:
-            return (
-                resources.files("agent_search_1688.souls")
-                .joinpath(f"{profile}.md")
-                .read_text(encoding="utf-8")
-                .strip()
-            )
-        except FileNotFoundError as exc:
-            raise ValueError(f"未找到 SOUL Profile：{profile}") from exc
 
     def build_1688_purchase_context(
         self,
@@ -57,7 +37,7 @@ class PurchasePromptBuilder:
         user_input: str,
     ) -> int:
         return (
-            len(self.build_1688_purchase_base_instructions())
+            len(STABLE_PURCHASE_INSTRUCTIONS)
             + sum(len(message.content) for message in history)
             + len(user_input)
         )

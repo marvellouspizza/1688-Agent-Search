@@ -77,23 +77,18 @@ search:
 SearXNG 仅提供搜索索引。查找 1688 商家时，程序会提供候选页面链接和搜索摘要，
 不会把结果表述为库存、价格、发票或商家身份已核验。
 
-## SOUL Profile
+## SOUL.md
 
-SOUL 是每轮发送给模型的角色与行为偏好。项目内置两个 Profile：
+SOUL 是每轮发送给模型的稳定身份与行为偏好。和 Hermes 一样，本项目每个
+实例只使用一个全局文件：
 
-- `procurement`：采购调研与供应商信息整理（默认）。
-- `general`：通用助手。
-
-每次只选择一个 Profile，避免相互冲突。可在配置中切换：
-
-```json
-{
-  "soul_profile": "general"
-}
+```text
+~/.1688-agent-search/SOUL.md
 ```
 
-也可以在 `~/.1688-agent-search/souls/` 新建例如 `my-team.md` 的自定义
-SOUL，再设置 `"soul_profile": "my-team"`；自定义文件会优先于内置 Profile。
+首次启动时若文件不存在，程序会创建采购版初始内容。之后直接编辑或替换这一个
+文件即可切换身份；新 Session 会读取更新后的内容。不要同时加载多个 SOUL，避免
+角色和规则冲突。
 
 ## 安装
 
