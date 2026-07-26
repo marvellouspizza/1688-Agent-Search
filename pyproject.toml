@@ -16,3 +16,6 @@ as1688 = "agent_search_1688.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"agent_search_1688.souls" = ["*.md"]

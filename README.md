@@ -77,6 +77,24 @@ search:
 SearXNG 仅提供搜索索引。查找 1688 商家时，程序会提供候选页面链接和搜索摘要，
 不会把结果表述为库存、价格、发票或商家身份已核验。
 
+## SOUL Profile
+
+SOUL 是每轮发送给模型的角色与行为偏好。项目内置两个 Profile：
+
+- `procurement`：采购调研与供应商信息整理（默认）。
+- `general`：通用助手。
+
+每次只选择一个 Profile，避免相互冲突。可在配置中切换：
+
+```json
+{
+  "soul_profile": "general"
+}
+```
+
+也可以在 `~/.1688-agent-search/souls/` 新建例如 `my-team.md` 的自定义
+SOUL，再设置 `"soul_profile": "my-team"`；自定义文件会优先于内置 Profile。
+
 ## 安装
 
 支持 macOS 和 Linux，需要 Python 3.9 或更高版本。
