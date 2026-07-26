@@ -24,25 +24,14 @@ def validate_searxng_base_url(value: str) -> str:
     return url
 
 
-def search_searxng(
-    *, base_url: str, query: str, limit: int, timeout_seconds: int
-) -> dict[str, Any]:
+def search_searxng(*, base_url: str, query: str, limit: int, timeout_seconds: int) -> dict[str, Any]:
     normalized_base_url = validate_searxng_base_url(base_url)
     normalized_query = query.strip()
     if not 2 <= len(normalized_query) <= 300:
         raise ValueError("query 长度必须在 2 到 300 个字符之间")
     if not 1 <= limit <= 20:
         raise ValueError("limit 必须在 1 到 20 之间")
-
-    request_url = (
-        f"{normalized_base_url}/search?"
-        + urlencode({"q": normalized_query, "format": "json"})
-    )
-    request = urllib.request.Request(
-        request_url,
-        headers={"Accept": "application/json", "User-Agent": "as1688/0.3.0"},
-        method="GET",
-    )
+    request = urllib.request.Request(f"{normalized_base_url}/search?" + urlencode({"q": normalized_query, "format": "json"}), headers={"Accept": "application/json", "User-Agent": "as1688/0.3.0"}, method="GET")
     started_at = monotonic()
     try:
         with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
@@ -59,14 +48,7 @@ def search_searxng(
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise SearXNGError("SearXNG 没有返回有效 JSON；请启用 format=json") from exc
-    return {
-        "query": normalized_query,
-        "results": parse_searxng_results(payload, limit),
-        "meta": {
-            "backend": "searxng",
-            "duration_ms": round((monotonic() - started_at) * 1000),
-        },
-    }
+    return {"query": normalized_query, "results": parse_searxng_results(payload, limit), "meta": {"backend": "searxng", "duration_ms": round((monotonic() - started_at) * 1000)}}
 
 
 def parse_searxng_results(payload: Any, limit: int) -> list[dict[str, str]]:
@@ -79,22 +61,11 @@ def parse_searxng_results(payload: Any, limit: int) -> list[dict[str, str]]:
         if not isinstance(item, dict):
             continue
         url = item.get("url")
-        if not isinstance(url, str) or not url.startswith(("http://", "https://")):
-            continue
-        if url in seen_urls:
+        if not isinstance(url, str) or not url.startswith(("http://", "https://")) or url in seen_urls:
             continue
         seen_urls.add(url)
-        title = item.get("title")
-        content = item.get("content")
-        engine = item.get("engine")
-        results.append(
-            {
-                "title": title.strip() if isinstance(title, str) else "",
-                "url": url,
-                "snippet": content.strip() if isinstance(content, str) else "",
-                "engine": engine.strip() if isinstance(engine, str) else "",
-            }
-        )
+        title, content, engine = item.get("title"), item.get("content"), item.get("engine")
+        results.append({"title": title.strip() if isinstance(title, str) else "", "url": url, "snippet": content.strip() if isinstance(content, str) else "", "engine": engine.strip() if isinstance(engine, str) else ""})
         if len(results) >= limit:
             break
     return results
