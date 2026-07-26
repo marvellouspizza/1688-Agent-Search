@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
 from typing import Callable, Protocol
 
@@ -14,6 +15,7 @@ from .models import (
     MessageStatus,
     ProviderRuntime,
     PurchaseSession,
+    ProviderTurnResult,
 )
 from .prompt_builder import PurchasePromptBuilder
 from .providers import (
@@ -22,6 +24,7 @@ from .providers import (
     PurchaseProviderInterrupted,
 )
 from .session_store import PurchaseSessionStore
+from .tools.web.search import build_1688_tool_registry
 
 
 class PurchaseProviderAdapter(Protocol):
@@ -63,6 +66,7 @@ class PurchaseAgentRuntime:
         self.provider_adapter = provider_adapter
         self.session: PurchaseSession | None = None
         self.state = ConversationState.IDLE
+        self.tool_registry = build_1688_tool_registry()
 
     def create_or_restore_1688_purchase_session(
         self,
@@ -154,12 +158,19 @@ class PurchaseAgentRuntime:
                 partial_parts.append(delta)
                 delta_callback(delta)
 
-            provider_result = self.provider_adapter.stream_1688_model_reply(
-                user_input=user_input,
-                user_message_id=user_message.id,
-                on_stream_started=handle_stream_started,
-                on_delta=handle_delta,
-            )
+            if hasattr(self.provider_adapter, "run_1688_model_turn"):
+                provider_result = self._run_1688_tool_loop(
+                    user_input=user_input,
+                    on_stream_started=handle_stream_started,
+                    on_delta=handle_delta,
+                )
+            else:
+                provider_result = self.provider_adapter.stream_1688_model_reply(
+                    user_input=user_input,
+                    user_message_id=user_message.id,
+                    on_stream_started=handle_stream_started,
+                    on_delta=handle_delta,
+                )
             if self.state is ConversationState.REQUESTING:
                 handle_stream_started()
             assistant = self.session_store.save_1688_purchase_reply(
@@ -229,6 +240,51 @@ class PurchaseAgentRuntime:
             self.state = ConversationState.IDLE
         return result
 
+    def _run_1688_tool_loop(
+        self,
+        *,
+        user_input: str,
+        on_stream_started: Callable[[], None],
+        on_delta: Callable[[str], None],
+    ) -> ProviderTurnResult:
+        """Run project-owned function calls; no Codex native capability is used."""
+        runner = getattr(self.provider_adapter, "run_1688_model_turn")
+        assert self.session is not None
+        input_items: list[dict[str, object]] = [
+            {"role": message.role.value, "content": message.content}
+            for message in self.session_store.load_1688_purchase_context_messages(
+                self.session.id
+            )
+        ]
+        input_items.append({"role": "user", "content": user_input})
+        tool_definitions = self.tool_registry.definitions()
+        latest: ProviderTurnResult | None = None
+        seen_calls: set[tuple[str, str]] = set()
+        for _round in range(self.config.max_tool_rounds + 1):
+            latest = runner(
+                input_items=input_items,
+                tool_definitions=tool_definitions,
+                on_stream_started=on_stream_started,
+                on_delta=on_delta,
+            )
+            if not latest.tool_calls:
+                return latest
+            if _round >= self.config.max_tool_rounds:
+                raise PurchaseProviderError("工具调用已达到本轮上限")
+            input_items.extend(latest.response_items)
+            for call in latest.tool_calls:
+                signature = (call.name, repr(sorted(call.arguments.items())))
+                if signature in seen_calls:
+                    raise PurchaseProviderError("模型重复调用相同工具，已停止")
+                seen_calls.add(signature)
+                try:
+                    result = self.tool_registry.dispatch(call.name, call.arguments)
+                    output = json.dumps(result, ensure_ascii=False)[:30_000]
+                except Exception as exc:
+                    output = json.dumps({"error": str(exc)[:1_000]}, ensure_ascii=False)
+                input_items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
+        raise PurchaseProviderError("工具循环未产生最终回复")
+
     def switch_1688_purchase_model(self, model: str) -> None:
         if self.state is not ConversationState.IDLE:
             raise RuntimeError("模型回复期间不能切换模型")
@@ -293,11 +349,12 @@ def create_1688_purchase_agent(
 ) -> PurchaseAgentRuntime:
     prompt_builder = PurchasePromptBuilder()
     if provider_runtime.provider == CODEX_PROVIDER:
-        provider_adapter: PurchaseProviderAdapter = CodexPurchaseProviderAdapter(
+        from .providers import CodexResponsesProviderAdapter
+
+        provider_adapter: PurchaseProviderAdapter = CodexResponsesProviderAdapter(
             provider_runtime,
             config,
             prompt_builder,
-            cwd=cwd,
         )
     elif provider_runtime.provider == OPENAI_PROVIDER:
         from .providers import OpenAIResponsesProviderAdapter

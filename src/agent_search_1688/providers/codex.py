@@ -225,9 +225,6 @@ def resolve_1688_purchase_provider(
         raise PurchaseProviderError(
             "未找到本机 codex 命令。请先安装 Codex CLI。"
         )
-    _verify_1688_codex_version(codex_path)
-    _verify_1688_codex_feature_catalog(codex_path)
-
     try:
         login_status = subprocess.run(
             [codex_path, "login", "status"],
@@ -256,9 +253,9 @@ def resolve_1688_purchase_provider(
     return ProviderRuntime(
         provider=provider,
         model=model,
-        api_mode="codex_app_server_jsonl",
-        base_url="local://codex-app-server",
-        credential_source="codex-cli-chatgpt-login",
+        api_mode="codex_responses",
+        base_url="https://chatgpt.com/backend-api/codex",
+        credential_source="codex-cli-chatgpt-oauth",
         codex_path=codex_path,
     )
 
