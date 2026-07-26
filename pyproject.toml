@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-search-1688"
-version = "0.2.0"
+version = "0.3.0"
 description = "支持多模型供应商的 1688 智能采购对话 CLI"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -1,6 +1,6 @@
 # 1688 Agent Search
 
-面向 1688 智能采购项目的终端 Agent。当前版本先打通普通文字对话：
+面向 1688 智能采购项目的终端 Agent。当前版本支持普通文字对话和受控网页搜索：
 
 ```text
 启动 as1688
@@ -11,6 +11,8 @@
 → 创建 Agent 与 Session
 → 组装上下文
 → 转换为供应商 API 请求
+→ 需要公开信息时调用唯一允许的 `web_search` 工具
+→ 本机 SearXNG 返回搜索结果
 → 接收并显示流式回复
 → 保存会话
 → 等待下一次输入
@@ -38,6 +40,42 @@
 工具时，保存到权限为 `0600` 的 `~/.1688-agent-search/credentials.json`。
 钥匙串更新或删除失败时会明确报错，不会静默改用另一份旧凭证。
 API Key 不会写入普通 `config.json` 或 SQLite 会话库。
+
+## 本地 SearXNG 搜索
+
+本机 Codex Provider 会把本项目的工具注册表作为 `1688-tools` stdio MCP
+Server 提供给模型。Codex 自带网页搜索、终端、文件、浏览器、插件、Skill 和
+用户已有 MCP 均保持禁用；模型只能调用本项目注册的只读 `web_search`。
+
+默认连接地址为 `http://127.0.0.1:8888`。若 SearXNG 运行在 OrbStack，须把
+容器端口发布到 macOS 宿主机，例如：
+
+```yaml
+ports:
+  - "127.0.0.1:8888:8080"
+```
+
+并在 SearXNG 的 `settings.yml` 中允许 JSON：
+
+```yaml
+search:
+  formats:
+    - html
+    - json
+```
+
+可在 `~/.1688-agent-search/config.json` 配置非秘密连接信息：
+
+```json
+{
+  "searxng_base_url": "http://127.0.0.1:8888",
+  "searxng_timeout_seconds": 30,
+  "max_tool_rounds": 5
+}
+```
+
+SearXNG 仅提供搜索索引。查找 1688 商家时，程序会提供候选页面链接和搜索摘要，
+不会把结果表述为库存、价格、发票或商家身份已核验。
 
 ## 安装
 
