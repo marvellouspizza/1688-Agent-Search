@@ -36,7 +36,7 @@ def search_searxng(
 
     request_url = (
         f"{normalized_base_url}/search?"
-        + urlencode({"q": normalized_query, "format": "json", "language": "zh-CN"})
+        + urlencode({"q": normalized_query, "format": "json"})
     )
     request = urllib.request.Request(
         request_url,
