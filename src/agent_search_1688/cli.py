@@ -703,7 +703,7 @@ def run_1688_purchase_cli(argv: Sequence[str] | None = None) -> int:
     if args.command == "sessions":
         return run_1688_sessions_command(args)
     if args.command == "mcp-server":
-        from .mcp_server import run_1688_mcp_server
+        from .tools.mcp_server import run_1688_mcp_server
 
         return run_1688_mcp_server()
     parser.error(f"未知命令：{args.command}")

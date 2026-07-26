@@ -6,8 +6,8 @@ import json
 import sys
 from typing import Any
 
-from .tools import ToolRegistry
-from .web_search_tool import build_1688_tool_registry
+from .registry import ToolRegistry
+from .web.search import build_1688_tool_registry
 
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -27,14 +27,7 @@ def handle_mcp_message(message: dict[str, Any], registry: ToolRegistry) -> dict[
     if method == "notifications/initialized":
         return None
     if method == "initialize":
-        return _response(
-            request_id,
-            {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "1688-tools", "version": "0.3.0"},
-            },
-        )
+        return _response(request_id, {"protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {"tools": {}}, "serverInfo": {"name": "1688-tools", "version": "0.3.0"}})
     if method == "tools/list":
         return _response(request_id, {"tools": registry.definitions()})
     if method == "tools/call":
@@ -51,10 +44,7 @@ def handle_mcp_message(message: dict[str, Any], registry: ToolRegistry) -> dict[
             return _response(request_id, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
         except Exception:
             return _response(request_id, {"content": [{"type": "text", "text": "web_search 执行失败"}], "isError": True})
-        return _response(
-            request_id,
-            {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]},
-        )
+        return _response(request_id, {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]})
     return _error(request_id, -32601, f"不支持的 MCP 方法：{method}")
 
 

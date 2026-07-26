@@ -203,6 +203,18 @@ OpenAI API Key 也可以只通过 `OPENAI_API_KEY` 环境变量提供。
 6. `src/agent_search_1688/session_store.py`：SQLite Session 和事务。
 7. `src/agent_search_1688/models.py`：统一消息与结果结构。
 8. `src/agent_search_1688/prompt_builder.py`：三层上下文。
+9. `src/agent_search_1688/tools/`：受控工具注册表、MCP Server 与网页搜索后端。
+
+工具目录按能力分类：
+
+```text
+tools/
+├── registry.py       工具注册与调度
+├── mcp_server.py     Codex 使用的 stdio MCP 适配器
+└── web/
+    ├── search.py     web_search 工具定义
+    └── searxng.py    SearXNG 后端客户端
+```
 
 稳定核心入口仍然是：
 
