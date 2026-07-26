@@ -32,6 +32,7 @@ from .codex import (
     PurchaseProviderError,
     PurchaseProviderInterrupted,
 )
+from .openai import _iter_1688_openai_sse_events
 
 CODEX_AUTH_PATH = Path.home() / ".codex" / "auth.json"
 CODEX_AUTH_LOCK_PATH = Path.home() / ".codex" / "auth.json.as1688.lock"
@@ -122,7 +123,7 @@ def _refresh_local_codex_auth() -> dict[str, str]:
 
 def _responses_tools(definitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
-        {"type": "function", "name": item["name"], "description": item["description"], "parameters": item["inputSchema"], "strict": True}
+        {"type": "function", "name": item["name"], "description": item["description"], "parameters": item["inputSchema"]}
         for item in definitions
     ]
 
@@ -160,7 +161,7 @@ class CodexResponsesProviderAdapter:
         if self._interrupted:
             self._interrupted = False
             raise PurchaseProviderInterrupted("用户已停止回复")
-        payload: dict[str, Any] = {"model": self.provider_runtime.model, "instructions": self._instructions, "input": input_items, "store": False}
+        payload: dict[str, Any] = {"model": self.provider_runtime.model, "instructions": self._instructions, "input": input_items, "store": False, "stream": True}
         tools = _responses_tools(tool_definitions)
         if tools:
             payload.update({"tools": tools, "tool_choice": "auto", "parallel_tool_calls": False})
@@ -198,7 +199,8 @@ class CodexResponsesProviderAdapter:
             on_delta(content)
         usage_data = response_payload.get("usage") if isinstance(response_payload.get("usage"), dict) else {}
         usage = TokenUsage(input_tokens=int(usage_data.get("input_tokens", 0) or 0), output_tokens=int(usage_data.get("output_tokens", 0) or 0), total_tokens=int(usage_data.get("total_tokens", 0) or 0))
-        return ProviderTurnResult(content=content, tool_calls=calls, response_items=normalized_items, usage=usage, actual_model=str(response_payload.get("model") or self.provider_runtime.model), response_id=str(response_payload.get("id") or self.thread_id or ""))
+        response_id = str(response_payload.get("id") or self.thread_id or "")
+        return ProviderTurnResult(content=content, tool_calls=calls, response_items=normalized_items, usage=usage, actual_model=str(response_payload.get("model") or self.provider_runtime.model), response_id=response_id, provider_thread_id=response_id)
 
     def _request(self, payload: dict[str, Any]) -> dict[str, Any]:
         for attempt in range(2):
@@ -206,21 +208,48 @@ class CodexResponsesProviderAdapter:
             request = urllib.request.Request(CODEX_RESPONSES_URL, data=json.dumps(payload).encode("utf-8"), headers=_codex_headers(token), method="POST")
             try:
                 with urllib.request.urlopen(request, timeout=self.config.request_timeout_seconds) as response:
-                    body = response.read(20_000_001)
+                    completed: dict[str, Any] | None = None
+                    output_items: list[dict[str, Any]] = []
+                    text_deltas: list[str] = []
+                    for event in _iter_1688_openai_sse_events(response):
+                        event_type = event.get("type")
+                        if event_type == "error":
+                            raise PurchaseProviderError(str(event.get("message") or "Codex Responses 流返回错误"))
+                        if event_type == "response.output_item.done" and isinstance(event.get("item"), dict):
+                            output_items.append(event["item"])
+                        elif event_type == "response.output_text.delta" and isinstance(event.get("delta"), str):
+                            text_deltas.append(event["delta"])
+                        elif event_type == "response.completed":
+                            candidate = event.get("response")
+                            if isinstance(candidate, dict):
+                                completed = dict(candidate)
+                                completed["output"] = output_items or [{
+                                    "type": "message",
+                                    "role": "assistant",
+                                    "content": [{"type": "output_text", "text": "".join(text_deltas)}],
+                                }]
             except urllib.error.HTTPError as exc:
                 if exc.code == 401 and attempt == 0:
                     _refresh_local_codex_auth()
                     continue
-                raise PurchaseProviderError(f"Codex Responses 请求失败（HTTP {exc.code}）") from exc
+                try:
+                    detail = exc.read(8_001).decode("utf-8", errors="replace")
+                except OSError:
+                    detail = ""
+                try:
+                    parsed_detail = json.loads(detail)
+                    if isinstance(parsed_detail, dict):
+                        message = (parsed_detail.get("error") or {}).get("message")
+                        detail = message if isinstance(message, str) else json.dumps(parsed_detail, ensure_ascii=False)
+                except json.JSONDecodeError:
+                    pass
+                suffix = f"：{detail[:500]}" if detail else ""
+                raise PurchaseProviderError(
+                    f"Codex Responses 请求失败（HTTP {exc.code}）{suffix}"
+                ) from exc
             except (urllib.error.URLError, TimeoutError, OSError) as exc:
                 raise PurchaseProviderError(f"无法连接 Codex Responses：{exc}") from exc
-            if len(body) > 20_000_000:
-                raise PurchaseInvalidResponse("Codex Responses 响应过大")
-            try:
-                decoded = json.loads(body.decode("utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise PurchaseInvalidResponse("Codex Responses 返回了无效 JSON") from exc
-            if not isinstance(decoded, dict):
-                raise PurchaseInvalidResponse("Codex Responses 返回格式无效")
-            return decoded
+            if completed is None:
+                raise PurchaseInvalidResponse("Codex Responses 流未返回完成事件")
+            return completed
         raise AssertionError("unreachable")

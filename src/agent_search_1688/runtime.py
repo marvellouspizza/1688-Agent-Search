@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 from pathlib import Path
+import time
 from typing import Callable, Protocol
 
 from .config import CODEX_PROVIDER, OPENAI_PROVIDER, PurchaseConfig
@@ -161,6 +162,7 @@ class PurchaseAgentRuntime:
             if hasattr(self.provider_adapter, "run_1688_model_turn"):
                 provider_result = self._run_1688_tool_loop(
                     user_input=user_input,
+                    request_id=request_id,
                     on_stream_started=handle_stream_started,
                     on_delta=handle_delta,
                 )
@@ -244,6 +246,7 @@ class PurchaseAgentRuntime:
         self,
         *,
         user_input: str,
+        request_id: str,
         on_stream_started: Callable[[], None],
         on_delta: Callable[[str], None],
     ) -> ProviderTurnResult:
@@ -260,6 +263,7 @@ class PurchaseAgentRuntime:
         tool_definitions = self.tool_registry.definitions()
         latest: ProviderTurnResult | None = None
         seen_calls: set[tuple[str, str]] = set()
+        sequence = 0
         for _round in range(self.config.max_tool_rounds + 1):
             latest = runner(
                 input_items=input_items,
@@ -273,15 +277,30 @@ class PurchaseAgentRuntime:
                 raise PurchaseProviderError("工具调用已达到本轮上限")
             input_items.extend(latest.response_items)
             for call in latest.tool_calls:
+                sequence += 1
                 signature = (call.name, repr(sorted(call.arguments.items())))
                 if signature in seen_calls:
                     raise PurchaseProviderError("模型重复调用相同工具，已停止")
                 seen_calls.add(signature)
+                started = time.monotonic()
                 try:
                     result = self.tool_registry.dispatch(call.name, call.arguments)
                     output = json.dumps(result, ensure_ascii=False)[:30_000]
+                    status = "completed"
                 except Exception as exc:
                     output = json.dumps({"error": str(exc)[:1_000]}, ensure_ascii=False)
+                    status = "failed"
+                self.session_store.append_1688_tool_trace(
+                    session_id=self.session.id,
+                    request_id=request_id,
+                    sequence=sequence,
+                    call_id=call.call_id,
+                    name=call.name,
+                    arguments_json=json.dumps(call.arguments, ensure_ascii=False),
+                    result_json=output,
+                    status=status,
+                    duration_ms=round((time.monotonic() - started) * 1000),
+                )
                 input_items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
         raise PurchaseProviderError("工具循环未产生最终回复")
 

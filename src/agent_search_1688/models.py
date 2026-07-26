@@ -135,6 +135,7 @@ class ProviderTurnResult:
     usage: TokenUsage
     actual_model: str
     response_id: str
+    provider_thread_id: str
 
 
 def validate_1688_conversation_roles(messages: list[Message]) -> None:

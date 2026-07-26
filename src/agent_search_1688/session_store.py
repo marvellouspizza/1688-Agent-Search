@@ -103,6 +103,23 @@ class PurchaseSessionStore:
                     started_at TEXT NOT NULL,
                     completed_at TEXT
                 );
+
+                CREATE TABLE IF NOT EXISTS tool_traces (
+                    id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+                    request_id TEXT NOT NULL REFERENCES requests(id) ON DELETE CASCADE,
+                    sequence INTEGER NOT NULL,
+                    call_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    arguments_json TEXT NOT NULL,
+                    result_json TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('completed', 'failed')),
+                    duration_ms INTEGER NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS tool_traces_request_sequence
+                ON tool_traces(request_id, sequence);
                 """
             )
             columns = {
@@ -413,6 +430,35 @@ class PurchaseSessionStore:
             connection.execute(
                 "UPDATE requests SET status = 'streaming' WHERE id = ?",
                 (request_id,),
+            )
+            connection.commit()
+
+    def append_1688_tool_trace(
+        self,
+        *,
+        session_id: str,
+        request_id: str,
+        sequence: int,
+        call_id: str,
+        name: str,
+        arguments_json: str,
+        result_json: str,
+        status: str,
+        duration_ms: int,
+    ) -> None:
+        with self._connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO tool_traces(
+                    id, session_id, request_id, sequence, call_id, name,
+                    arguments_json, result_json, status, duration_ms, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"tool_{uuid4().hex}", session_id, request_id, sequence,
+                    call_id, name, arguments_json[:30_000], result_json[:30_000],
+                    status, max(0, duration_ms), _now(),
+                ),
             )
             connection.commit()
 
