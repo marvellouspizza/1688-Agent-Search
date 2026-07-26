@@ -6,7 +6,6 @@ from dataclasses import asdict, dataclass, replace
 import json
 import os
 from pathlib import Path
-import re
 from typing import Any
 
 
@@ -41,7 +40,6 @@ class PurchaseConfig:
     searxng_base_url: str = "http://127.0.0.1:8888"
     searxng_timeout_seconds: int = 30
     max_tool_rounds: int = 5
-    soul_profile: str = "procurement"
 
     @property
     def resolved_database_path(self) -> Path:
@@ -65,7 +63,6 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         "searxng_base_url",
         "searxng_timeout_seconds",
         "max_tool_rounds",
-        "soul_profile",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -76,7 +73,6 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         "model",
         "database_path",
         "searxng_base_url",
-        "soul_profile",
     ):
         value = data.get(field_name)
         if value is not None and not isinstance(value, str):
@@ -105,8 +101,6 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         raise PurchaseConfigError("searxng_base_url 不能为空")
     if not 1 <= config.max_tool_rounds <= 10:
         raise PurchaseConfigError("max_tool_rounds 必须在 1 到 10 之间")
-    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", config.soul_profile):
-        raise PurchaseConfigError("soul_profile 只能包含小写字母、数字、连字符和下划线")
     return config
 
 
