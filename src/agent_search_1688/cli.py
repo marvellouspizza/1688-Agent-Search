@@ -34,7 +34,7 @@ from .credentials import (
     save_1688_openai_api_key,
 )
 from .models import ChatStatus, ModelOption, ProviderRuntime
-from .provider import (
+from .providers import (
     PurchaseProviderError,
     list_1688_provider_models,
     resolve_1688_purchase_provider,

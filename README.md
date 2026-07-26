@@ -197,8 +197,9 @@ OpenAI API Key 也可以只通过 `OPENAI_API_KEY` 环境变量提供。
 
 1. `src/agent_search_1688/cli.py`：供应商、模型和终端交互。
 2. `src/agent_search_1688/runtime.py`：统一 Agent 状态机。
-3. `src/agent_search_1688/provider.py`：Provider 解析和 Codex 适配器。
-4. `src/agent_search_1688/openai_provider.py`：OpenAI Responses API 适配器。
+3. `src/agent_search_1688/providers/`：Provider 解析和模型适配器。
+   - `codex.py`：本机 Codex / ChatGPT 适配器。
+   - `openai.py`：OpenAI Responses API 适配器。
 5. `src/agent_search_1688/credentials.py`：API Key 安全存取。
 6. `src/agent_search_1688/session_store.py`：SQLite Session 和事务。
 7. `src/agent_search_1688/models.py`：统一消息与结果结构。

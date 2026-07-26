@@ -15,7 +15,7 @@ import threading
 import time
 from typing import Any, Callable
 
-from .config import (
+from ..config import (
     CODEX_PROVIDER,
     DEFAULT_MODEL,
     DEFAULT_PROVIDER,
@@ -25,8 +25,8 @@ from .config import (
     PurchaseConfig,
     SUPPORTED_PROVIDERS,
 )
-from .credentials import load_1688_openai_api_key
-from .models import (
+from ..credentials import load_1688_openai_api_key
+from ..models import (
     Message,
     ModelOption,
     ProviderRuntime,
@@ -34,7 +34,7 @@ from .models import (
     PurchaseSession,
     TokenUsage,
 )
-from .prompt_builder import PurchasePromptBuilder
+from ..prompt_builder import PurchasePromptBuilder
 
 
 class PurchaseProviderError(RuntimeError):
@@ -1082,7 +1082,7 @@ def list_1688_provider_models(
             timeout_seconds=timeout_seconds,
         )
     if provider_runtime.provider == OPENAI_PROVIDER:
-        from .openai_provider import list_1688_openai_models
+        from .openai import list_1688_openai_models
 
         return list_1688_openai_models(
             provider_runtime,

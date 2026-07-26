@@ -16,7 +16,7 @@ from .models import (
     PurchaseSession,
 )
 from .prompt_builder import PurchasePromptBuilder
-from .provider import (
+from .providers import (
     CodexPurchaseProviderAdapter,
     PurchaseProviderError,
     PurchaseProviderInterrupted,
@@ -300,7 +300,7 @@ def create_1688_purchase_agent(
             cwd=cwd,
         )
     elif provider_runtime.provider == OPENAI_PROVIDER:
-        from .openai_provider import OpenAIResponsesProviderAdapter
+        from .providers import OpenAIResponsesProviderAdapter
 
         provider_adapter = OpenAIResponsesProviderAdapter(
             provider_runtime,
