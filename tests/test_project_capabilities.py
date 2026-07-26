@@ -3,7 +3,9 @@ import tempfile
 import unittest
 
 from agent_search_1688.skills import SkillCatalog
+from agent_search_1688.tools.browser.inspect import _console_arguments
 from agent_search_1688.tools.web.extract import _validate_public_url
+from agent_search_1688.tools.web.search import build_1688_tool_registry
 from agent_search_1688.config import PurchaseConfig
 from agent_search_1688.models import ProviderRuntime
 from agent_search_1688.prompt_builder import PurchasePromptBuilder
@@ -59,10 +61,28 @@ class ProjectCapabilitiesTests(unittest.TestCase):
             try:
                 for name in ("skills_list", "skill_view", "web_search", "web_extract"):
                     self.assertTrue(agent.tool_registry.is_parallel_safe(name))
-                for name in ("browser_navigate", "browser_snapshot"):
+                for name in ("browser_navigate", "browser_snapshot", "browser_console"):
                     self.assertFalse(agent.tool_registry.is_parallel_safe(name))
             finally:
                 agent.close()
+
+    def test_browser_console_only_allows_read_only_operations(self):
+        self.assertEqual(
+            _console_arguments({"operation": "links", "max_links": 5}),
+            ("links", 5, False),
+        )
+        with self.assertRaises(ValueError):
+            _console_arguments({"expression": "document.links"})
+        root = Path(__file__).parents[1] / "skills"
+        definition = next(
+            item for item in build_1688_tool_registry(skill_root=root).definitions()
+            if item["name"] == "browser_console"
+        )
+        self.assertNotIn("expression", definition["inputSchema"]["properties"])
+        self.assertEqual(
+            definition["inputSchema"]["properties"]["operation"]["enum"],
+            ["messages", "links"],
+        )
 
     def test_runtime_uses_supplied_project_root_for_skills(self):
         project_root = Path(__file__).parents[1]
