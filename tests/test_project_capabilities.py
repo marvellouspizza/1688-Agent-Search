@@ -6,7 +6,7 @@ from agent_search_1688.skills import SkillCatalog
 from agent_search_1688.tools.web.extract import _validate_public_url
 from agent_search_1688.config import PurchaseConfig
 from agent_search_1688.models import ProviderRuntime
-from agent_search_1688.prompt_builder import STABLE_PURCHASE_INSTRUCTIONS
+from agent_search_1688.prompt_builder import PurchasePromptBuilder
 from agent_search_1688.runtime import create_1688_purchase_agent
 from agent_search_1688.session_store import PurchaseSessionStore
 
@@ -37,8 +37,32 @@ class ProjectCapabilitiesTests(unittest.TestCase):
 
     def test_default_tool_budget_covers_a_skill_research_sequence(self):
         self.assertEqual(PurchaseConfig().max_tool_rounds, 10)
-        self.assertIn("必须先实际调用相应工具", STABLE_PURCHASE_INSTRUCTIONS)
-        self.assertNotIn("绝不可声称", STABLE_PURCHASE_INSTRUCTIONS)
+        root = Path(__file__).parents[1] / "skills"
+        prompt = PurchasePromptBuilder(root).build_1688_purchase_base_instructions()
+        self.assertIn("# Tool-use enforcement", prompt)
+        self.assertIn("<tool_persistence>", prompt)
+        self.assertIn("## Skills (mandatory)", prompt)
+        self.assertIn("1688-identify-product-keywords", prompt)
+
+    def test_only_read_only_project_tools_are_parallel_safe(self):
+        root = Path(__file__).parents[1]
+        runtime = ProviderRuntime(
+            "local-codex-chatgpt", "gpt-test", "codex_responses",
+            "https://example.invalid", "test",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            agent = create_1688_purchase_agent(
+                config=PurchaseConfig(), provider_runtime=runtime,
+                session_store=PurchaseSessionStore(Path(directory) / "sessions.db"),
+                cwd=root,
+            )
+            try:
+                for name in ("skills_list", "skill_view", "web_search", "web_extract"):
+                    self.assertTrue(agent.tool_registry.is_parallel_safe(name))
+                for name in ("browser_navigate", "browser_snapshot"):
+                    self.assertFalse(agent.tool_registry.is_parallel_safe(name))
+            finally:
+                agent.close()
 
     def test_runtime_uses_supplied_project_root_for_skills(self):
         project_root = Path(__file__).parents[1]

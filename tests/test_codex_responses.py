@@ -49,7 +49,10 @@ class CodexResponsesTests(unittest.TestCase):
             base_url="https://chatgpt.com/backend-api/codex",
             credential_source="test",
         )
-        adapter = CodexResponsesProviderAdapter(runtime, PurchaseConfig(), PurchasePromptBuilder())
+        adapter = CodexResponsesProviderAdapter(
+            runtime, PurchaseConfig(),
+            PurchasePromptBuilder(Path(__file__).parents[1] / "skills"),
+        )
         adapter._instructions = "test"
         response = {
             "id": "response_1",
@@ -73,6 +76,33 @@ class CodexResponsesTests(unittest.TestCase):
         self.assertEqual(result.tool_calls[0].arguments, {"query": "construction gate"})
         self.assertEqual(result.response_items[0]["call_id"], "call_1")
         self.assertEqual(result.usage.total_tokens, 7)
+
+    def test_codex_request_keeps_auto_choice_and_enables_parallel_calls(self):
+        runtime = ProviderRuntime(
+            "local-codex-chatgpt", "gpt-test", "codex_responses",
+            "https://chatgpt.com/backend-api/codex", "test",
+        )
+        adapter = CodexResponsesProviderAdapter(
+            runtime, PurchaseConfig(),
+            PurchasePromptBuilder(Path(__file__).parents[1] / "skills"),
+        )
+        adapter._instructions = "test"
+        captured = {}
+        def capture(payload):
+            captured.update(payload)
+            return {"id": "response_1", "model": "gpt-test", "output": []}
+        with patch.object(adapter, "_request", side_effect=capture):
+            adapter.run_1688_model_turn(
+                input_items=[{"role": "user", "content": "find suppliers"}],
+                tool_definitions=[{
+                    "name": "web_search", "description": "Search public pages.",
+                    "inputSchema": {"type": "object", "properties": {}},
+                }],
+                on_stream_started=lambda: None,
+                on_delta=lambda _value: None,
+            )
+        self.assertEqual(captured["tool_choice"], "auto")
+        self.assertTrue(captured["parallel_tool_calls"])
 
     def test_tool_trace_is_separate_from_chat_messages(self):
         with tempfile.TemporaryDirectory() as directory:
