@@ -67,7 +67,7 @@ class PurchaseAgentRuntime:
         self.provider_adapter = provider_adapter
         self.session: PurchaseSession | None = None
         self.state = ConversationState.IDLE
-        self.tool_registry = build_1688_tool_registry()
+        self.tool_registry = build_1688_tool_registry(skill_root=Path.cwd() / "skills")
 
     def create_or_restore_1688_purchase_session(
         self,
