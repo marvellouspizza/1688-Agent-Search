@@ -28,13 +28,13 @@ def web_search_handler(arguments: dict[str, Any]) -> dict[str, Any]:
 
 def build_1688_tool_registry(*, skill_root=None) -> ToolRegistry:
     registry = ToolRegistry()
-    registry.register(ToolEntry(name="web_search", description="使用本机 SearXNG 搜索公开网页。结果是搜索索引，不能证明商品库存、价格或商家资质已经核验。", input_schema=WEB_SEARCH_SCHEMA, handler=web_search_handler))
+    registry.register(ToolEntry(name="web_search", description="使用本机 SearXNG 搜索公开网页。结果是搜索索引，不能证明商品库存、价格或商家资质已经核验。", input_schema=WEB_SEARCH_SCHEMA, handler=web_search_handler, parallel_safe=True))
     config = load_1688_purchase_config()
     registry.register(build_web_extract_entry(config))
     register_browser_tools(registry, BrowserInspector())
     catalog = SkillCatalog([skill_root] if skill_root is not None else [])
-    registry.register(ToolEntry("skills_list", "列出本项目已安装的 Skill；不读取本机 Codex Skill。", {"type": "object", "properties": {}, "additionalProperties": False}, lambda arguments: _skills_list(arguments, catalog)))
-    registry.register(ToolEntry("skill_view", "读取一个项目 Skill 或其 references 中的文件。", {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}}, "required": ["name"], "additionalProperties": False}, lambda arguments: _skill_view(arguments, catalog)))
+    registry.register(ToolEntry("skills_list", "列出本项目已安装的 Skill；不读取本机 Codex Skill。", {"type": "object", "properties": {}, "additionalProperties": False}, lambda arguments: _skills_list(arguments, catalog), parallel_safe=True))
+    registry.register(ToolEntry("skill_view", "读取一个项目 Skill 或其 references 中的文件。", {"type": "object", "properties": {"name": {"type": "string"}, "path": {"type": "string"}}, "required": ["name"], "additionalProperties": False}, lambda arguments: _skill_view(arguments, catalog), parallel_safe=True))
     return registry
 
 

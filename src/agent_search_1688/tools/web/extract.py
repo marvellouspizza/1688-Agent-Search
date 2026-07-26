@@ -80,4 +80,4 @@ WEB_EXTRACT_SCHEMA: dict[str, Any] = {"type": "object", "properties": {"url": {"
 
 
 def build_web_extract_entry(config: PurchaseConfig) -> ToolEntry:
-    return ToolEntry("web_extract", "提取公开网页的受限文本；不能访问内网、本机或证明登录后信息。", WEB_EXTRACT_SCHEMA, lambda arguments: web_extract_handler(arguments, config))
+    return ToolEntry("web_extract", "提取公开网页的受限文本；不能访问内网、本机或证明登录后信息。", WEB_EXTRACT_SCHEMA, lambda arguments: web_extract_handler(arguments, config), parallel_safe=True)
