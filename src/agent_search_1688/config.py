@@ -39,7 +39,10 @@ class PurchaseConfig:
     max_context_characters: int = 120_000
     searxng_base_url: str = "http://127.0.0.1:8888"
     searxng_timeout_seconds: int = 30
-    max_tool_rounds: int = 5
+    # A Skill-guided research request commonly needs: list Skills, read one or
+    # more Skills, search, then inspect a result.  Five turns can cut that
+    # normal sequence off before the model gets a chance to answer.
+    max_tool_rounds: int = 10
 
     @property
     def resolved_database_path(self) -> Path:

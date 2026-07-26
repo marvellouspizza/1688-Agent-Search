@@ -59,6 +59,7 @@ class PurchaseAgentRuntime:
         session_store: PurchaseSessionStore,
         prompt_builder: PurchasePromptBuilder,
         provider_adapter: PurchaseProviderAdapter,
+        cwd: Path,
     ):
         self.config = config
         self.provider_runtime = provider_runtime
@@ -67,7 +68,9 @@ class PurchaseAgentRuntime:
         self.provider_adapter = provider_adapter
         self.session: PurchaseSession | None = None
         self.state = ConversationState.IDLE
-        self.tool_registry = build_1688_tool_registry(skill_root=Path.cwd() / "skills")
+        # Use the application root supplied by the entry point.  `Path.cwd()`
+        # is the user's shell directory and is not a reliable project root.
+        self.tool_registry = build_1688_tool_registry(skill_root=cwd / "skills")
 
     def create_or_restore_1688_purchase_session(
         self,
@@ -393,4 +396,5 @@ def create_1688_purchase_agent(
         session_store=session_store,
         prompt_builder=prompt_builder,
         provider_adapter=provider_adapter,
+        cwd=cwd.resolve(),
     )
