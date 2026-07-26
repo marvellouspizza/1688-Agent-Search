@@ -8,8 +8,8 @@ from typing import Any, Callable, Iterator
 import urllib.error
 import urllib.request
 
-from .config import PurchaseConfig
-from .models import (
+from ..config import PurchaseConfig
+from ..models import (
     Message,
     ModelOption,
     ProviderRuntime,
@@ -17,8 +17,8 @@ from .models import (
     PurchaseSession,
     TokenUsage,
 )
-from .prompt_builder import PurchasePromptBuilder
-from .provider import (
+from ..prompt_builder import PurchasePromptBuilder
+from .codex import (
     PurchaseInvalidResponse,
     PurchaseProviderError,
     PurchaseProviderInterrupted,
