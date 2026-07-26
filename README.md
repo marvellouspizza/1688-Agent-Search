@@ -142,6 +142,7 @@ as1688 chat --session session_xxx
 ```
 
 模型生成时按 `Ctrl+C` 会中止请求，未完成回复不会保存为成功消息。
+等待用户输入时按 `Ctrl+C` 会直接退出 CLI。
 
 ## 配置和会话
 

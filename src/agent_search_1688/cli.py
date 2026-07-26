@@ -650,8 +650,8 @@ def run_1688_chat_command(args: argparse.Namespace) -> int:
                 print()
                 break
             except KeyboardInterrupt:
-                print("\n输入 /quit 退出。")
-                continue
+                print("\n已退出。")
+                break
             if not text.strip():
                 continue
             if text.startswith("/"):
