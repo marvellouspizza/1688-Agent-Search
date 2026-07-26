@@ -37,6 +37,9 @@ class PurchaseConfig:
     database_path: str | None = None
     request_timeout_seconds: int = 300
     max_context_characters: int = 120_000
+    searxng_base_url: str = "http://127.0.0.1:8888"
+    searxng_timeout_seconds: int = 30
+    max_tool_rounds: int = 5
 
     @property
     def resolved_database_path(self) -> Path:
@@ -57,18 +60,23 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         "database_path",
         "request_timeout_seconds",
         "max_context_characters",
+        "searxng_base_url",
+        "searxng_timeout_seconds",
+        "max_tool_rounds",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
         raise PurchaseConfigError(f"配置包含未知字段：{', '.join(unknown)}")
 
-    for field_name in ("provider", "model", "database_path"):
+    for field_name in ("provider", "model", "database_path", "searxng_base_url"):
         value = data.get(field_name)
         if value is not None and not isinstance(value, str):
             raise PurchaseConfigError(f"{field_name} 必须是字符串")
     for field_name in (
         "request_timeout_seconds",
         "max_context_characters",
+        "searxng_timeout_seconds",
+        "max_tool_rounds",
     ):
         if field_name in data and type(data[field_name]) is not int:
             raise PurchaseConfigError(f"{field_name} 必须是整数")
@@ -82,6 +90,12 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         raise PurchaseConfigError("request_timeout_seconds 必须大于 0")
     if config.max_context_characters <= 0:
         raise PurchaseConfigError("max_context_characters 必须大于 0")
+    if config.searxng_timeout_seconds <= 0:
+        raise PurchaseConfigError("searxng_timeout_seconds 必须大于 0")
+    if not config.searxng_base_url.strip():
+        raise PurchaseConfigError("searxng_base_url 不能为空")
+    if not 1 <= config.max_tool_rounds <= 10:
+        raise PurchaseConfigError("max_tool_rounds 必须在 1 到 10 之间")
     return config
 
 

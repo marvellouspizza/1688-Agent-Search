@@ -91,6 +91,7 @@ def build_1688_purchase_cli_parser() -> argparse.ArgumentParser:
 
     sessions = subparsers.add_parser("sessions", help="列出最近会话")
     sessions.add_argument("--limit", type=int, default=20, help="最多显示数量")
+    subparsers.add_parser("mcp-server", help=argparse.SUPPRESS)
     return parser
 
 
@@ -701,6 +702,10 @@ def run_1688_purchase_cli(argv: Sequence[str] | None = None) -> int:
         return run_1688_provider_command(args)
     if args.command == "sessions":
         return run_1688_sessions_command(args)
+    if args.command == "mcp-server":
+        from .mcp_server import run_1688_mcp_server
+
+        return run_1688_mcp_server()
     parser.error(f"未知命令：{args.command}")
     return 2
 

@@ -10,6 +10,7 @@ import queue
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from typing import Any, Callable
@@ -630,10 +631,43 @@ def _discover_1688_codex_mcp_config(
     return disabled_config
 
 
+def _build_1688_tools_mcp_config() -> dict[str, Any]:
+    """仅向 Codex 暴露本项目自己的只读工具 Registry。"""
+
+    launcher = Path(sys.argv[0]).resolve()
+    environment = {
+        "AGENT_SEARCH_1688_HOME": os.environ.get("AGENT_SEARCH_1688_HOME", ""),
+    }
+    if launcher.suffix == ".pyz":
+        args = [str(launcher), "mcp-server"]
+    else:
+        source_root = Path(__file__).resolve().parents[1]
+        existing_pythonpath = os.environ.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = (
+            str(source_root)
+            if not existing_pythonpath
+            else f"{source_root}{os.pathsep}{existing_pythonpath}"
+        )
+        args = ["-m", "agent_search_1688", "mcp-server"]
+    return {
+        "enabled": True,
+        "command": sys.executable,
+        "args": args,
+        "env": environment,
+        "startup_timeout_sec": 15,
+        "tool_timeout_sec": 45,
+    }
+
+
 class CodexStreamCollector:
     """按顺序拼接 Codex 增量，并只在 turn/completed 后确认完成。"""
 
-    allowed_item_types = {"userMessage", "agentMessage", "reasoning"}
+    allowed_item_types = {
+        "userMessage",
+        "agentMessage",
+        "reasoning",
+        "mcpToolCall",
+    }
 
     def __init__(self, thread_id: str, turn_id: str, model: str):
         self.thread_id = thread_id
@@ -752,6 +786,7 @@ class CodexPurchaseProviderAdapter:
             provider_runtime.codex_path,
             cwd,
         )
+        self._mcp_config["1688-tools"] = _build_1688_tools_mcp_config()
         self.transport = CodexAppServerTransport(
             provider_runtime.codex_path,
             config.request_timeout_seconds,
@@ -762,7 +797,7 @@ class CodexPurchaseProviderAdapter:
         self._tool_free_config: dict[str, Any] | None = None
 
     def _build_1688_tool_free_config(self) -> dict[str, Any]:
-        """动态关闭当前机器上发现的工具、插件、MCP 和 Skill。"""
+        """禁用外部能力，仅允许本项目受控的 1688-tools MCP。"""
 
         if self._tool_free_config is not None:
             return self._tool_free_config
