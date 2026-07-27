@@ -28,6 +28,7 @@ from agent_search_1688.providers.codex import (
     build_1688_codex_turn_request,
     list_1688_codex_models,
     resolve_1688_purchase_provider,
+    _build_1688_codex_subprocess_environment,
 )
 from agent_search_1688.providers.codex_responses import (
     CodexResponsesProviderAdapter,
@@ -140,22 +141,30 @@ class OptionalCodexRuntimeTests(unittest.TestCase):
             ("codex_app_server", CodexPurchaseProviderAdapter),
         ):
             with tempfile.TemporaryDirectory() as directory:
-                agent = create_1688_purchase_agent(
-                    config=PurchaseConfig(
-                        openai_runtime=(
-                            "codex_app_server"
-                            if api_mode == "codex_app_server"
-                            else "auto"
-                        )
-                    ),
-                    provider_runtime=_runtime(api_mode),
-                    session_store=PurchaseSessionStore(
-                        Path(directory) / "sessions.db"
-                    ),
-                    cwd=project_root,
-                )
+                with patch(
+                    "agent_search_1688.codex_runtime."
+                    "install_1688_codex_runtime_mcp"
+                ) as install_mcp:
+                    agent = create_1688_purchase_agent(
+                        config=PurchaseConfig(
+                            openai_runtime=(
+                                "codex_app_server"
+                                if api_mode == "codex_app_server"
+                                else "auto"
+                            )
+                        ),
+                        provider_runtime=_runtime(api_mode),
+                        session_store=PurchaseSessionStore(
+                            Path(directory) / "sessions.db"
+                        ),
+                        cwd=project_root,
+                    )
                 try:
                     self.assertIsInstance(agent.provider_adapter, adapter_type)
+                    self.assertEqual(
+                        install_mcp.call_count,
+                        1 if api_mode == "codex_app_server" else 0,
+                    )
                 finally:
                     agent.close()
 
@@ -210,7 +219,7 @@ class OptionalCodexRuntimeTests(unittest.TestCase):
             ("thread/start", {"cwd": str(project_root)}),
         )
         self.assertNotIn("ephemeral", fake.requests[0][1])
-        self.assertEqual(fake.requests[1][0], "thread/inject_items")
+        self.assertEqual(len(fake.requests), 1)
 
     def test_app_server_collector_accepts_native_tool_items(self):
         collector = CodexStreamCollector("thread-1", "turn-1", "gpt-test")
@@ -284,6 +293,47 @@ class OptionalCodexRuntimeTests(unittest.TestCase):
             self.assertEqual(rendered.count(MANAGED_END), 1)
             self.assertIn('[mcp_servers."1688-tools"]', rendered)
             self.assertIn("AGENT_SEARCH_1688_SKILL_ROOT", rendered)
+
+    def test_codex_home_controls_auth_and_mcp_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            codex_home = Path(directory) / "custom-codex"
+            codex_home.mkdir()
+            (codex_home / "auth.json").write_text(json.dumps({
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "access_token": "access",
+                    "refresh_token": "refresh",
+                },
+            }))
+            with patch.dict("os.environ", {"CODEX_HOME": str(codex_home)}), patch(
+                "sys.argv", [str(Path(directory) / "as1688.pyz")]
+            ):
+                from agent_search_1688.providers.codex_auth import (
+                    load_local_codex_chatgpt_auth,
+                )
+
+                self.assertEqual(
+                    load_local_codex_chatgpt_auth()["access_token"],
+                    "access",
+                )
+                target = install_1688_codex_runtime_mcp(
+                    cwd=Path(__file__).parents[1]
+                )
+            self.assertEqual(target, codex_home / "config.toml")
+            self.assertTrue(target.exists())
+
+    def test_app_server_subprocess_strips_hermes_tier_one_secrets(self):
+        sensitive = {
+            "GITHUB_TOKEN": "github",
+            "HERMES_DASHBOARD_SESSION_TOKEN": "dashboard",
+            "GATEWAY_RELAY_ID": "relay",
+            "GATEWAY_ALLOWED_USERS": "users",
+            "_HERMES_FORCE_OPENAI_API_KEY": "forced",
+        }
+        with patch.dict("os.environ", sensitive, clear=False):
+            environment = _build_1688_codex_subprocess_environment()
+        for key in sensitive:
+            self.assertNotIn(key, environment)
 
     def test_approval_bridge_accepts_project_mcp_and_declines_permissions(self):
         adapter = CodexPurchaseProviderAdapter(

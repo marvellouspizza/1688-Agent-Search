@@ -36,10 +36,7 @@ class CodexResponsesTests(unittest.TestCase):
                 "auth_mode": "chatgpt",
                 "tokens": {"access_token": "access", "refresh_token": "refresh"},
             }))
-            with patch(
-                "agent_search_1688.providers.codex_auth.CODEX_AUTH_PATH",
-                auth_path,
-            ):
+            with patch.dict("os.environ", {"CODEX_HOME": directory}):
                 self.assertEqual(load_local_codex_chatgpt_auth(), {
                     "access_token": "access", "refresh_token": "refresh",
                 })
