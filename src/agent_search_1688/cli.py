@@ -552,6 +552,9 @@ def _switch_1688_codex_runtime(
         else:
             print(f"项目工具已注册到 Codex app-server：{mcp_path}")
     path = save_1688_purchase_config(updated)
+    # 当前 Provider Adapter 不变；这里只同步已保存的“下一 Session”配置，
+    # 让同一 CLI 内再次查看状态时显示新值。
+    agent.config = updated
     print(f"Codex Runtime：{current} → {selected}")
     print(f"配置文件：{path}")
     print("下一次新建 Session 生效；当前 Session 保持原 Runtime。")
