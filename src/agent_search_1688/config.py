@@ -39,10 +39,8 @@ class PurchaseConfig:
     max_context_characters: int = 120_000
     searxng_base_url: str = "http://127.0.0.1:8888"
     searxng_timeout_seconds: int = 30
-    # A Skill-guided research request commonly needs: list Skills, read one or
-    # more Skills, search, then inspect a result.  Five turns can cut that
-    # normal sequence off before the model gets a chance to answer.
-    max_tool_rounds: int = 10
+    # Matches Hermes' default per-turn tool-calling iteration budget.
+    max_iterations: int = 500
 
     @property
     def resolved_database_path(self) -> Path:
@@ -65,7 +63,7 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         "max_context_characters",
         "searxng_base_url",
         "searxng_timeout_seconds",
-        "max_tool_rounds",
+        "max_iterations",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -84,7 +82,7 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         "request_timeout_seconds",
         "max_context_characters",
         "searxng_timeout_seconds",
-        "max_tool_rounds",
+        "max_iterations",
     ):
         if field_name in data and type(data[field_name]) is not int:
             raise PurchaseConfigError(f"{field_name} 必须是整数")
@@ -102,8 +100,8 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         raise PurchaseConfigError("searxng_timeout_seconds 必须大于 0")
     if not config.searxng_base_url.strip():
         raise PurchaseConfigError("searxng_base_url 不能为空")
-    if not 1 <= config.max_tool_rounds <= 10:
-        raise PurchaseConfigError("max_tool_rounds 必须在 1 到 10 之间")
+    if config.max_iterations <= 0:
+        raise PurchaseConfigError("max_iterations 必须大于 0")
     return config
 
 

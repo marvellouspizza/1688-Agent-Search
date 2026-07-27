@@ -265,10 +265,9 @@ class PurchaseAgentRuntime:
         ]
         input_items.append({"role": "user", "content": user_input})
         tool_definitions = self.tool_registry.definitions()
-        latest: ProviderTurnResult | None = None
         seen_calls: set[tuple[str, str]] = set()
         sequence = 0
-        for _round in range(self.config.max_tool_rounds + 1):
+        for _iteration in range(self.config.max_iterations):
             latest = runner(
                 input_items=input_items,
                 tool_definitions=tool_definitions,
@@ -277,8 +276,6 @@ class PurchaseAgentRuntime:
             )
             if not latest.tool_calls:
                 return latest
-            if _round >= self.config.max_tool_rounds:
-                raise PurchaseProviderError("工具调用已达到本轮上限")
             input_items.extend(latest.response_items)
             for call in latest.tool_calls:
                 sequence += 1
@@ -318,7 +315,48 @@ class PurchaseAgentRuntime:
                     duration_ms=duration_ms,
                 )
                 input_items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
-        raise PurchaseProviderError("工具循环未产生最终回复")
+
+        # Hermes gives the model one final, tool-free request after the
+        # iteration budget is exhausted so a long research turn still returns
+        # the evidence collected so far instead of failing the whole request.
+        input_items.append(
+            {
+                "role": "user",
+                "content": (
+                    "You've reached the maximum number of tool-calling "
+                    "iterations allowed. Please provide a final response "
+                    "summarizing what you've found and accomplished so far, "
+                    "without calling any more tools."
+                ),
+            }
+        )
+        try:
+            for _attempt in range(2):
+                summary = runner(
+                    input_items=input_items,
+                    tool_definitions=[],
+                    on_stream_started=on_stream_started,
+                    on_delta=on_delta,
+                )
+                if not summary.tool_calls and summary.content.strip():
+                    return summary
+            fallback = (
+                "I reached the iteration limit and couldn't generate a "
+                "summary."
+            )
+        except Exception as exc:
+            fallback = (
+                f"I reached the maximum iterations "
+                f"({self.config.max_iterations}) but couldn't summarize. "
+                f"Error: {str(exc)[:1_000]}"
+            )
+        on_delta(fallback)
+        return replace(
+            latest,
+            content=fallback,
+            tool_calls=[],
+            response_items=[],
+        )
 
     def _dispatch_1688_tool_call(
         self,
