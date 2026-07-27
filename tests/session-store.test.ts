@@ -33,6 +33,7 @@ INSERT INTO sessions VALUES ('session_existing', 'local-codex-chatgpt', 'gpt-5.6
 INSERT INTO messages VALUES ('msg_user', 'session_existing', 'user', 'hello', 'completed', 'local-codex-chatgpt', 'gpt-5.6-sol', '2026-07-27T10:00:00+08:00');
 INSERT INTO messages VALUES ('msg_assistant', 'session_existing', 'assistant', 'world', 'completed', 'local-codex-chatgpt', 'gpt-5.6-sol', '2026-07-27T10:00:02+08:00');
 INSERT INTO requests VALUES ('request_existing', 'session_existing', 'msg_user', 'completed', 'local-codex-chatgpt', 'gpt-5.6-sol', 1, 1, 2, NULL, NULL, '2026-07-27T10:00:00+08:00', '2026-07-27T10:00:02+08:00');
+""")
 db.commit()
 `;
   const created = spawnSync("python3", ["-c", script, path], { encoding: "utf8" });
