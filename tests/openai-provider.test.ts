@@ -1,0 +1,85 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import type { ProviderRuntime, PurchaseSession } from "../dist/models.js";
+import {
+  OpenAIResponsesProviderAdapter,
+  iterateSseEvents,
+  listOpenAiModels,
+} from "../dist/providers/openai.js";
+
+const runtime: ProviderRuntime = {
+  provider: "openai-api",
+  model: "gpt-5.6",
+  apiMode: "openai_responses_sse",
+  baseUrl: "https://api.openai.test/v1",
+  credentialSource: "test",
+  credential: "sk-test",
+};
+
+const session: PurchaseSession = {
+  id: "session_1",
+  provider: "openai-api",
+  model: "gpt-5.6",
+  createdAt: "2026-07-27T00:00:00+08:00",
+  updatedAt: "2026-07-27T00:00:00+08:00",
+};
+
+function sse(events: readonly Record<string, unknown>[]): Response {
+  const body = `${events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join("")}data: [DONE]\n\n`;
+  return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+}
+
+test("SSE parser preserves split multi-line events", async () => {
+  const response = new Response("data: {\"type\":\ndata: \"response.created\"}\n\ndata: [DONE]\n\n");
+  const events: Record<string, unknown>[] = [];
+  for await (const event of iterateSseEvents(response)) events.push(event);
+  assert.deepEqual(events, [{ type: "response.created" }]);
+});
+
+test("OpenAI model catalog filters non-text models", async () => {
+  const models = await listOpenAiModels(runtime, {
+    fetchImpl: async () => new Response(JSON.stringify({ data: [
+      { id: "gpt-5.6", owned_by: "openai" },
+      { id: "gpt-image-1", owned_by: "openai" },
+      { id: "text-embedding-3-small", owned_by: "openai" },
+    ] }), { status: 200 }),
+  });
+  assert.deepEqual(models.map((item) => item.model), ["gpt-5.6"]);
+});
+
+test("OpenAI adapter streams text and stores local history", async () => {
+  const deltas: string[] = [];
+  let started = 0;
+  const adapter = new OpenAIResponsesProviderAdapter(runtime, {
+    openaiRuntime: "auto",
+    requestTimeoutSeconds: 3,
+    maxContextCharacters: 120_000,
+    searxngBaseUrl: "http://127.0.0.1:8888",
+    searxngTimeoutSeconds: 3,
+    maxIterations: 500,
+  }, {
+    buildBaseInstructions: () => "system",
+    buildContext: () => "",
+  }, {
+    fetchImpl: async () => sse([
+      { type: "response.created" },
+      { type: "response.output_item.added", item: { type: "message" } },
+      { type: "response.output_text.delta", delta: "答" },
+      { type: "response.output_text.delta", delta: "案" },
+      { type: "response.output_item.done", item: { type: "message" } },
+      { type: "response.completed", response: { status: "completed", model: "gpt-5.6", usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 } } },
+    ]),
+  });
+  assert.equal(adapter.openSession(session, []), "openai_local_session_1");
+  const result = await adapter.streamModelReply({
+    userInput: "问题",
+    userMessageId: "msg_1",
+    onStreamStarted: () => { started += 1; },
+    onDelta: (delta) => deltas.push(delta),
+  });
+  assert.equal(started, 1);
+  assert.deepEqual(deltas, ["答", "案"]);
+  assert.equal(result.content, "答案");
+  assert.equal(result.usage.totalTokens, 3);
+});
