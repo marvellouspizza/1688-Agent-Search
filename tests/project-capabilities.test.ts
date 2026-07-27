@@ -62,6 +62,18 @@ test("public URL validation rejects loopback, credentials, and non-http schemes"
   await assert.rejects(() => validatePublicUrl("file:///etc/passwd"), /公开 HTTP/);
 });
 
+test("public URL validation handles public IPv4 and IPv4-mapped IPv6 without weakening private-address checks", async () => {
+  assert.equal(
+    await validatePublicUrl("https://203.119.169.229/product"),
+    "https://203.119.169.229/product",
+  );
+  assert.equal(
+    await validatePublicUrl("https://[::ffff:203.119.169.229]/product"),
+    "https://[::ffff:cb77:a9e5]/product",
+  );
+  await assert.rejects(() => validatePublicUrl("http://[::ffff:127.0.0.1]/private"), /私有或保留/);
+});
+
 test("composed project registry exposes the exact seven tools", () => {
   const registry = buildToolRegistry({
     skillRoot: skillRoot(),
