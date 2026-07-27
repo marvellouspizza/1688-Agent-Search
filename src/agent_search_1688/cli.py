@@ -39,6 +39,7 @@ from .credentials import (
     load_1688_openai_api_key,
     save_1688_openai_api_key,
 )
+from .display import HermesThinkingSpinner
 from .models import ChatStatus, ModelOption, ProviderRuntime
 from .providers import (
     PurchaseProviderError,
@@ -594,11 +595,39 @@ def _ask_1688_purchase_agent(
     agent: PurchaseAgentRuntime,
     text: str,
 ) -> ChatStatus:
-    print("1688 Agent > ", end="", flush=True)
-    result = agent.chat(
-        text,
-        on_delta=lambda delta: print(delta, end="", flush=True),
-    )
+    spinner: HermesThinkingSpinner | None = None
+    response_started = False
+
+    def show_thinking(active: bool) -> None:
+        nonlocal response_started, spinner
+        if active:
+            if spinner is None:
+                if response_started:
+                    print()
+                    response_started = False
+                spinner = HermesThinkingSpinner.create_for_model_request()
+                spinner.start()
+        elif spinner is not None:
+            spinner.stop()
+            spinner = None
+
+    def print_delta(delta: str) -> None:
+        nonlocal response_started
+        if not response_started:
+            print("1688 Agent > ", end="", flush=True)
+            response_started = True
+        print(delta, end="", flush=True)
+
+    try:
+        result = agent.chat(
+            text,
+            on_delta=print_delta,
+            on_thinking=show_thinking,
+        )
+    finally:
+        show_thinking(False)
+    if not response_started:
+        print("1688 Agent > ", end="", flush=True)
     print()
     if result.status is not ChatStatus.COMPLETED:
         print(f"[{result.status.value}] {result.error or '请求未完成'}")
