@@ -56,7 +56,7 @@ export interface RuntimePromptBuilder {
 }
 
 export interface PurchaseAgentRuntimeOptions {
-  readonly config: PurchaseConfig;
+  config: PurchaseConfig;
   readonly providerRuntime: ProviderRuntime;
   readonly sessionStore: PurchaseSessionStore;
   readonly promptBuilder: RuntimePromptBuilder;
@@ -65,7 +65,7 @@ export interface PurchaseAgentRuntimeOptions {
 }
 
 export class PurchaseAgentRuntime {
-  readonly config: PurchaseConfig;
+  config: PurchaseConfig;
   providerRuntime: ProviderRuntime;
   readonly sessionStore: PurchaseSessionStore;
   readonly promptBuilder: RuntimePromptBuilder;
