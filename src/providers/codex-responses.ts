@@ -206,7 +206,13 @@ export class CodexResponsesProviderAdapter {
       }
       onStreamStarted();
       try {
-        const completed = await consumeCodexStream(response);
+        let completed: Record<string, unknown>;
+        try {
+          completed = await consumeCodexStream(response);
+        } catch (error) {
+          if (timedOut) throw new PurchaseProviderError("Codex Responses 请求超时", { cause: error });
+          throw error;
+        }
         if (completed.status !== undefined && completed.status !== "completed") {
           throw new PurchaseProviderError("Codex Responses 请求未成功完成");
         }
