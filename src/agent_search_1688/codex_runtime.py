@@ -115,7 +115,11 @@ def install_1688_codex_runtime_mcp(
 ) -> Path:
     """像 Hermes 一样，把项目工具回调注册到 Codex app-server。"""
 
-    resolved_home = (codex_home or Path.home() / ".codex").expanduser()
+    configured_home = os.environ.get("CODEX_HOME", "").strip()
+    resolved_home = (
+        codex_home
+        or (Path(configured_home) if configured_home else Path.home() / ".codex")
+    ).expanduser()
     target = resolved_home / "config.toml"
     try:
         existing = target.read_text(encoding="utf-8") if target.exists() else ""

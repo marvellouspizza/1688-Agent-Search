@@ -460,6 +460,12 @@ def create_1688_purchase_agent(
     prompt_builder = PurchasePromptBuilder(resolve_1688_skill_root(cwd))
     if provider_runtime.provider == CODEX_PROVIDER:
         if provider_runtime.api_mode == "codex_app_server":
+            from .codex_runtime import install_1688_codex_runtime_mcp
+
+            try:
+                install_1688_codex_runtime_mcp(cwd=cwd.resolve())
+            except RuntimeError as exc:
+                raise PurchaseProviderError(str(exc)) from exc
             provider_adapter: PurchaseProviderAdapter = (
                 CodexPurchaseProviderAdapter(
                     provider_runtime,
