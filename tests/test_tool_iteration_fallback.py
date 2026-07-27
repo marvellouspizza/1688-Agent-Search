@@ -128,6 +128,41 @@ class ToolIterationFallbackTests(unittest.TestCase):
             finally:
                 agent.close()
 
+    def test_thinking_status_wraps_every_model_request_and_stops_before_delta(self):
+        provider = _SequenceProvider([
+            _turn(
+                calls=[ProviderToolCall("call-1", "skills_list", {})],
+                response_items=[{
+                    "type": "function_call",
+                    "call_id": "call-1",
+                    "name": "skills_list",
+                    "arguments": "{}",
+                }],
+            ),
+            (_turn(content="完成"), ["完成"]),
+        ])
+        events = []
+        with tempfile.TemporaryDirectory() as directory:
+            agent = self._agent(directory, provider)
+            try:
+                result = agent.chat(
+                    "读取 Skill",
+                    on_delta=lambda delta: events.append(("delta", delta)),
+                    on_thinking=lambda active: events.append(
+                        ("thinking", active)
+                    ),
+                )
+            finally:
+                agent.close()
+
+        self.assertEqual(result.status, ChatStatus.COMPLETED)
+        self.assertEqual(
+            [event for event in events if event == ("thinking", True)],
+            [("thinking", True), ("thinking", True)],
+        )
+        delta_index = events.index(("delta", "完成"))
+        self.assertEqual(events[delta_index - 1], ("thinking", False))
+
     def test_summary_interruption_remains_interrupted(self):
         provider = _SequenceProvider([
             _turn(
