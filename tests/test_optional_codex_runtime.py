@@ -201,8 +201,10 @@ class OptionalCodexRuntimeTests(unittest.TestCase):
         ]
         self.assertEqual(
             adapter.open_1688_purchase_session(session, history),
-            "thread-1",
+            "codex_pending_session-1",
         )
+        self.assertEqual(fake.requests, [])
+        self.assertEqual(adapter._ensure_1688_app_server_thread(), "thread-1")
         self.assertEqual(
             fake.requests[0],
             ("thread/start", {"cwd": str(project_root)}),
