@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -10,6 +11,7 @@ from agent_search_1688.codex_runtime import (
     install_1688_codex_runtime_mcp,
     parse_1688_codex_runtime,
 )
+from agent_search_1688.cli import _switch_1688_codex_runtime
 from agent_search_1688.config import PurchaseConfig
 from agent_search_1688.models import (
     Message,
@@ -93,6 +95,24 @@ class OptionalCodexRuntimeTests(unittest.TestCase):
         )
         with self.assertRaises(ValueError):
             parse_1688_codex_runtime("browser")
+
+    def test_runtime_switch_updates_saved_next_session_status(self):
+        agent = SimpleNamespace(
+            config=PurchaseConfig(),
+            provider_runtime=_runtime("codex_responses"),
+        )
+        with patch(
+            "agent_search_1688.cli.resolve_1688_purchase_provider",
+        ), patch(
+            "agent_search_1688.cli.install_1688_codex_runtime_mcp",
+            return_value=Path("/tmp/codex/config.toml"),
+        ), patch(
+            "agent_search_1688.cli.save_1688_purchase_config",
+            return_value=Path("/tmp/config.json"),
+        ) as save:
+            _switch_1688_codex_runtime(agent, "on")
+        self.assertEqual(agent.config.openai_runtime, "codex_app_server")
+        save.assert_called_once()
 
     @patch("agent_search_1688.providers.codex.shutil.which", return_value="/codex")
     @patch("agent_search_1688.providers.codex.subprocess.run")
