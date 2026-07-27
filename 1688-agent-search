@@ -8,6 +8,10 @@ command -v node >/dev/null 2>&1 || {
     echo "启动失败：需要 Node.js 24 或更高版本" >&2
     exit 1
 }
+node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 24 ? 0 : 1)' || {
+    echo "启动失败：需要 Node.js 24 或更高版本（当前 $(node --version)）" >&2
+    exit 1
+}
 
 if [ ! -x "$AS1688_SOURCE_DIR/node_modules/.bin/tsc" ]; then
     echo "正在安装开发依赖..." >&2

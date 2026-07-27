@@ -31,10 +31,14 @@ cleanup_as1688_temporary_files() {
 trap cleanup_as1688_temporary_files EXIT HUP INT TERM
 
 case "$AS1688_INSTALL_ROOT" in
-    ""|/|"$HOME") fail_as1688_install "安装目录不安全：$AS1688_INSTALL_ROOT" ;;
+    /*) ;;
+    *) fail_as1688_install "安装目录必须是绝对路径：$AS1688_INSTALL_ROOT" ;;
+esac
+case "$AS1688_INSTALL_ROOT" in
+    ""|/|"$HOME"|*//*|*/../*|*/..|*/./*|*/.) fail_as1688_install "安装目录不安全：$AS1688_INSTALL_ROOT" ;;
 esac
 
-if [ ! -f "$AS1688_SOURCE_DIR/package.json" ] || [ ! -d "$AS1688_SOURCE_DIR/src" ]; then
+if [ ! -f "$AS1688_SOURCE_DIR/package.json" ] || [ ! -f "$AS1688_SOURCE_DIR/src/cli-entry.ts" ]; then
     command -v curl >/dev/null 2>&1 || fail_as1688_install "在线安装需要 curl"
     command -v tar >/dev/null 2>&1 || fail_as1688_install "在线安装需要 tar"
     AS1688_DOWNLOAD_DIR=$(mktemp -d "${TMPDIR:-/tmp}/as1688-download.XXXXXX")
@@ -59,6 +63,9 @@ fi
 if [ ! -f "$AS1688_SOURCE_DIR/package-lock.json" ]; then
     fail_as1688_install "源码缺少 package-lock.json"
 fi
+if [ ! -f "$AS1688_SOURCE_DIR/uninstall.sh" ]; then
+    fail_as1688_install "源码缺少 uninstall.sh"
+fi
 
 AS1688_INSTALL_PARENT=$(dirname -- "$AS1688_INSTALL_ROOT")
 mkdir -p "$AS1688_INSTALL_PARENT" "$AS1688_BIN_DIR"
@@ -68,6 +75,7 @@ AS1688_STAGE=$(mktemp -d "$AS1688_INSTALL_PARENT/.as1688-install.XXXXXX")
 cp "$AS1688_SOURCE_DIR/package.json" "$AS1688_STAGE/package.json"
 cp "$AS1688_SOURCE_DIR/package-lock.json" "$AS1688_STAGE/package-lock.json"
 cp "$AS1688_SOURCE_DIR/tsconfig.json" "$AS1688_STAGE/tsconfig.json"
+cp "$AS1688_SOURCE_DIR/uninstall.sh" "$AS1688_STAGE/uninstall.sh"
 cp -R "$AS1688_SOURCE_DIR/src" "$AS1688_STAGE/src"
 if [ -d "$AS1688_SOURCE_DIR/skills" ]; then
     cp -R "$AS1688_SOURCE_DIR/skills" "$AS1688_STAGE/skills"
@@ -83,6 +91,7 @@ echo "正在构建 TypeScript 运行时..."
 )
 chmod 700 "$AS1688_STAGE"
 chmod 700 "$AS1688_STAGE/dist/cli-entry.js"
+chmod 700 "$AS1688_STAGE/uninstall.sh"
 
 AS1688_WRAPPER_TMP=$(mktemp "$AS1688_BIN_DIR/.as1688.XXXXXX")
 {

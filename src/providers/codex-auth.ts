@@ -114,7 +114,7 @@ export async function refreshLocalCodexAuth(options: CodexAuthOptions = {}): Pro
       : current.refreshToken;
     payload.tokens.access_token = refreshed.access_token;
     payload.tokens.refresh_token = refreshToken;
-    payload.last_refresh = Math.trunc(Date.now() / 1_000);
+    payload.last_refresh = new Date().toISOString();
     const temporary = join(dirname(path), ".auth.json.as1688.tmp");
     writeFileSync(temporary, `${JSON.stringify(payload)}\n`, { encoding: "utf8", mode: 0o600 });
     chmodSync(temporary, 0o600);
