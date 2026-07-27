@@ -18,4 +18,4 @@ if [ -e "$AS1688_INSTALL_ROOT" ]; then
     rm -rf "$AS1688_INSTALL_ROOT"
 fi
 
-echo "as1688 已卸载。配置和会话保留在 $AS1688_USER_DATA。"
+echo "as1688 已卸载。配置和会话保留在 ${AS1688_USER_DATA}。"
