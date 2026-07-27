@@ -182,7 +182,7 @@ const FILE_KEYS = {
 } as const;
 ```
 
-Defaults remain `local-codex-chatgpt`, `gpt-5.6-sol`, `auto`, 600 seconds, 200,000 characters, `http://127.0.0.1:8888`, 30 seconds, and 500 iterations. Atomic config writes use a sibling `.tmp`, mode `0600`, then `renameSync`. `loadOrSeedSoul()` creates only `~/.1688-agent-search/SOUL.md`, never overwrites it, and returns the built-in purchase identity for empty content.
+Defaults remain `local-codex-chatgpt`, `gpt-5.6-sol`, `auto`, 300 seconds, 120,000 characters, `http://127.0.0.1:8888`, 30 seconds, and 500 iterations. Atomic config writes use a sibling `.tmp`, mode `0600`, then `renameSync`. `loadOrSeedSoul()` creates only `~/.1688-agent-search/SOUL.md`, never overwrites it, and returns the built-in purchase identity for empty content.
 
 - [ ] **Step 7: Implement the three-part prompt builder**
 
