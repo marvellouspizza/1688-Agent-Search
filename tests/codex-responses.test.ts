@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import type { ProviderRuntime, PurchaseSession } from "../dist/models.js";
-import { buildCodexChatGptHeaders } from "../dist/providers/codex-auth.js";
+import { buildCodexChatGptHeaders, refreshLocalCodexAuth } from "../dist/providers/codex-auth.js";
 import { CodexResponsesProviderAdapter } from "../dist/providers/codex-responses.js";
+import { PurchaseProviderError, PurchaseProviderInterrupted } from "../dist/providers/errors.js";
 
 const runtime: ProviderRuntime = {
   provider: "local-codex-chatgpt",
@@ -97,3 +101,48 @@ test("Codex Responses refreshes once after a 401", async () => {
   assert.equal(requests, 2);
   assert.equal(refreshes, 1);
 });
+
+test("Codex Responses timeout is a provider failure, not a user interruption", async () => {
+  const adapter = new CodexResponsesProviderAdapter(runtime, { ...config, requestTimeoutSeconds: 0.01 }, {
+    buildBaseInstructions: () => "system",
+    buildContext: () => "",
+  }, {
+    fetchImpl: async (_input, init) => await abortedFetch(init),
+    auth: {
+      load: () => ({ accessToken: "token", refreshToken: "refresh" }),
+      refresh: async () => ({ accessToken: "new", refreshToken: "refresh" }),
+      headers: () => ({ Authorization: "Bearer token" }),
+    },
+  });
+  adapter.openSession(session, []);
+  await assert.rejects(
+    adapter.runModelTurn({ inputItems: [], toolDefinitions: [], onStreamStarted: () => {}, onDelta: () => {} }),
+    (error: unknown) => error instanceof PurchaseProviderError
+      && !(error instanceof PurchaseProviderInterrupted) && /超时/.test(error.message),
+  );
+});
+
+test("Codex auth refresh preserves the ISO timestamp schema", async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), "as1688-codex-auth-"));
+  const authPath = join(codexHome, "auth.json");
+  writeFileSync(authPath, JSON.stringify({
+    auth_mode: "chatgpt",
+    tokens: { access_token: "old", refresh_token: "refresh" },
+    last_refresh: "2026-07-01T00:00:00Z",
+  }), { mode: 0o600 });
+  await refreshLocalCodexAuth({
+    codexHome,
+    fetchImpl: async () => new Response(JSON.stringify({ access_token: "new" }), { status: 200 }),
+  });
+  const stored = JSON.parse(readFileSync(authPath, "utf8"));
+  assert.equal(typeof stored.last_refresh, "string");
+  assert.match(stored.last_refresh, /^\d{4}-\d{2}-\d{2}T.*Z$/);
+});
+
+function abortedFetch(init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    const signal = init?.signal;
+    if (!signal) return reject(new Error("missing signal"));
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}

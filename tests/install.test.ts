@@ -25,7 +25,9 @@ test("installer builds a runnable Node CLI and uninstaller preserves user data",
   assert.match(help.stdout, /as1688 chat/);
   mkdirSync(userData, { recursive: true });
   writeFileSync(join(userData, "keep.txt"), "keep", { flag: "w" });
-  const removed = spawnSync("sh", [resolve("uninstall.sh")], { cwd: resolve("."), env: environment, encoding: "utf8" });
+  const installedUninstaller = join(installRoot, "uninstall.sh");
+  assert.equal(existsSync(installedUninstaller), true);
+  const removed = spawnSync("sh", [installedUninstaller], { cwd: resolve("."), env: environment, encoding: "utf8" });
   assert.equal(removed.status, 0, removed.stderr || removed.stdout);
   assert.equal(existsSync(join(binDir, "as1688")), false);
   assert.equal(existsSync(installRoot), false);

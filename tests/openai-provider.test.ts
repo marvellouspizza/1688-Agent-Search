@@ -7,6 +7,7 @@ import {
   iterateSseEvents,
   listOpenAiModels,
 } from "../dist/providers/openai.js";
+import { PurchaseProviderError, PurchaseProviderInterrupted } from "../dist/providers/errors.js";
 
 const runtime: ProviderRuntime = {
   provider: "openai-api",
@@ -83,3 +84,30 @@ test("OpenAI adapter streams text and stores local history", async () => {
   assert.equal(result.content, "答案");
   assert.equal(result.usage.totalTokens, 3);
 });
+
+test("OpenAI request timeout is a provider failure, not a user interruption", async () => {
+  const adapter = new OpenAIResponsesProviderAdapter(runtime, {
+    openaiRuntime: "auto",
+    requestTimeoutSeconds: 0.01,
+    maxContextCharacters: 120_000,
+    searxngBaseUrl: "http://127.0.0.1:8888",
+    searxngTimeoutSeconds: 3,
+    maxIterations: 500,
+  }, { buildBaseInstructions: () => "system", buildContext: () => "" }, {
+    fetchImpl: async (_input, init) => await abortedFetch(init),
+  });
+  adapter.openSession(session, []);
+  await assert.rejects(
+    adapter.streamModelReply({ userInput: "wait", userMessageId: "msg_2", onStreamStarted: () => {}, onDelta: () => {} }),
+    (error: unknown) => error instanceof PurchaseProviderError
+      && !(error instanceof PurchaseProviderInterrupted) && /超时/.test(error.message),
+  );
+});
+
+function abortedFetch(init?: RequestInit): Promise<Response> {
+  return new Promise((_resolve, reject) => {
+    const signal = init?.signal;
+    if (!signal) return reject(new Error("missing signal"));
+    signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+  });
+}
