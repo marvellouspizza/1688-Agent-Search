@@ -1,12 +1,3 @@
-__pycache__/
-*.py[cod]
-.pytest_cache/
-.coverage
-.venv/
 dist/
-build/
-*.egg-info/
-*.db
-*.db-shm
-*.db-wal
-output/
+node_modules/
+*.tsbuildinfo
