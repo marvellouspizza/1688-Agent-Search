@@ -623,12 +623,22 @@ class CodexPurchaseProviderAdapter:
         self.thread_id: str | None = None
         self.actual_model = provider_runtime.model
         self.active_turn_id: str | None = None
+        self._pending_history: list[Message] = []
 
     def open_1688_purchase_session(
         self,
         session: PurchaseSession,
         history: list[Message],
     ) -> str:
+        """只绑定本地 Session；与 Hermes 一样到首个 Turn 才启动 Codex。"""
+
+        self._pending_history = list(history)
+        self.thread_id = None
+        return f"codex_pending_{session.id}"
+
+    def _ensure_1688_app_server_thread(self) -> str:
+        if self.thread_id is not None:
+            return self.thread_id
         self.transport.start_1688_codex_connection()
         result = self.transport.request_1688_codex(
             "thread/start",
@@ -644,12 +654,13 @@ class CodexPurchaseProviderAdapter:
         thread_id = thread_id or result.get("sessionId") or result.get("threadId")
         if not isinstance(thread_id, str) or not thread_id:
             raise PurchaseInvalidResponse("Codex 未返回有效 thread id")
-        self.thread_id = thread_id
         actual_model = result.get("model")
         if isinstance(actual_model, str) and actual_model:
             self.actual_model = actual_model
-        if history:
-            history_items = build_1688_codex_history_items(history)
+        if self._pending_history:
+            history_items = build_1688_codex_history_items(
+                self._pending_history
+            )
             self.transport.request_1688_codex(
                 "thread/inject_items",
                 {
@@ -657,6 +668,8 @@ class CodexPurchaseProviderAdapter:
                     "items": history_items,
                 },
             )
+        self._pending_history = []
+        self.thread_id = thread_id
         return thread_id
 
     def switch_1688_purchase_model(self, model: str) -> None:
@@ -678,8 +691,8 @@ class CodexPurchaseProviderAdapter:
         on_stream_started: Callable[[], None],
         on_delta: Callable[[str], None],
     ) -> ProviderStreamResult:
-        if self.thread_id is None:
-            raise PurchaseProviderError("Provider Session 尚未创建")
+        self._ensure_1688_app_server_thread()
+        assert self.thread_id is not None
         request = build_1688_codex_turn_request(
             thread_id=self.thread_id,
             user_input=user_input,
