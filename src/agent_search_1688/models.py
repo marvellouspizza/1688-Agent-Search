@@ -120,6 +120,24 @@ class ProviderStreamResult:
     provider_thread_id: str
 
 
+@dataclass(frozen=True)
+class ProviderToolCall:
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class ProviderTurnResult:
+    content: str
+    tool_calls: list[ProviderToolCall]
+    response_items: list[dict[str, Any]]
+    usage: TokenUsage
+    actual_model: str
+    response_id: str
+    provider_thread_id: str
+
+
 def validate_1688_conversation_roles(messages: list[Message]) -> None:
     """发送模型前固定检查 User/Assistant 交替顺序。"""
 

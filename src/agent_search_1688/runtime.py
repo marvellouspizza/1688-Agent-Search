@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
+import json
 from pathlib import Path
+import time
 from typing import Callable, Protocol
 
 from .config import CODEX_PROVIDER, OPENAI_PROVIDER, PurchaseConfig
@@ -14,6 +17,7 @@ from .models import (
     MessageStatus,
     ProviderRuntime,
     PurchaseSession,
+    ProviderTurnResult,
 )
 from .prompt_builder import PurchasePromptBuilder
 from .providers import (
@@ -22,6 +26,7 @@ from .providers import (
     PurchaseProviderInterrupted,
 )
 from .session_store import PurchaseSessionStore
+from .tools.web.search import build_1688_tool_registry
 
 
 class PurchaseProviderAdapter(Protocol):
@@ -55,6 +60,7 @@ class PurchaseAgentRuntime:
         session_store: PurchaseSessionStore,
         prompt_builder: PurchasePromptBuilder,
         provider_adapter: PurchaseProviderAdapter,
+        cwd: Path,
     ):
         self.config = config
         self.provider_runtime = provider_runtime
@@ -63,6 +69,9 @@ class PurchaseAgentRuntime:
         self.provider_adapter = provider_adapter
         self.session: PurchaseSession | None = None
         self.state = ConversationState.IDLE
+        # Use the application root supplied by the entry point.  `Path.cwd()`
+        # is the user's shell directory and is not a reliable project root.
+        self.tool_registry = build_1688_tool_registry(skill_root=cwd / "skills")
 
     def create_or_restore_1688_purchase_session(
         self,
@@ -154,12 +163,20 @@ class PurchaseAgentRuntime:
                 partial_parts.append(delta)
                 delta_callback(delta)
 
-            provider_result = self.provider_adapter.stream_1688_model_reply(
-                user_input=user_input,
-                user_message_id=user_message.id,
-                on_stream_started=handle_stream_started,
-                on_delta=handle_delta,
-            )
+            if hasattr(self.provider_adapter, "run_1688_model_turn"):
+                provider_result = self._run_1688_tool_loop(
+                    user_input=user_input,
+                    request_id=request_id,
+                    on_stream_started=handle_stream_started,
+                    on_delta=handle_delta,
+                )
+            else:
+                provider_result = self.provider_adapter.stream_1688_model_reply(
+                    user_input=user_input,
+                    user_message_id=user_message.id,
+                    on_stream_started=handle_stream_started,
+                    on_delta=handle_delta,
+                )
             if self.state is ConversationState.REQUESTING:
                 handle_stream_started()
             assistant = self.session_store.save_1688_purchase_reply(
@@ -229,6 +246,100 @@ class PurchaseAgentRuntime:
             self.state = ConversationState.IDLE
         return result
 
+    def _run_1688_tool_loop(
+        self,
+        *,
+        user_input: str,
+        request_id: str,
+        on_stream_started: Callable[[], None],
+        on_delta: Callable[[str], None],
+    ) -> ProviderTurnResult:
+        """Run project-owned function calls; no Codex native capability is used."""
+        runner = getattr(self.provider_adapter, "run_1688_model_turn")
+        assert self.session is not None
+        input_items: list[dict[str, object]] = [
+            {"role": message.role.value, "content": message.content}
+            for message in self.session_store.load_1688_purchase_context_messages(
+                self.session.id
+            )
+        ]
+        input_items.append({"role": "user", "content": user_input})
+        tool_definitions = self.tool_registry.definitions()
+        latest: ProviderTurnResult | None = None
+        seen_calls: set[tuple[str, str]] = set()
+        sequence = 0
+        for _round in range(self.config.max_tool_rounds + 1):
+            latest = runner(
+                input_items=input_items,
+                tool_definitions=tool_definitions,
+                on_stream_started=on_stream_started,
+                on_delta=on_delta,
+            )
+            if not latest.tool_calls:
+                return latest
+            if _round >= self.config.max_tool_rounds:
+                raise PurchaseProviderError("工具调用已达到本轮上限")
+            input_items.extend(latest.response_items)
+            for call in latest.tool_calls:
+                sequence += 1
+                signature = (call.name, repr(sorted(call.arguments.items())))
+                if signature in seen_calls:
+                    raise PurchaseProviderError("模型重复调用相同工具，已停止")
+                seen_calls.add(signature)
+            calls_with_sequence = list(zip(range(sequence - len(latest.tool_calls) + 1, sequence + 1), latest.tool_calls))
+            if len(calls_with_sequence) > 1 and all(
+                self.tool_registry.is_parallel_safe(call.name)
+                for _, call in calls_with_sequence
+            ):
+                with ThreadPoolExecutor(max_workers=len(calls_with_sequence)) as executor:
+                    futures = [
+                        (number, call, executor.submit(self._dispatch_1688_tool_call, call.name, call.arguments))
+                        for number, call in calls_with_sequence
+                    ]
+                    dispatched = [
+                        (number, call, *future.result())
+                        for number, call, future in futures
+                    ]
+            else:
+                dispatched = [
+                    (number, call, *self._dispatch_1688_tool_call(call.name, call.arguments))
+                    for number, call in calls_with_sequence
+                ]
+            for number, call, output, status, duration_ms in dispatched:
+                self.session_store.append_1688_tool_trace(
+                    session_id=self.session.id,
+                    request_id=request_id,
+                    sequence=number,
+                    call_id=call.call_id,
+                    name=call.name,
+                    arguments_json=json.dumps(call.arguments, ensure_ascii=False),
+                    result_json=output,
+                    status=status,
+                    duration_ms=duration_ms,
+                )
+                input_items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
+        raise PurchaseProviderError("工具循环未产生最终回复")
+
+    def _dispatch_1688_tool_call(
+        self,
+        name: str,
+        arguments: dict,
+    ) -> tuple[str, str, int]:
+        started = time.monotonic()
+        try:
+            result = self.tool_registry.dispatch(name, arguments)
+            return (
+                json.dumps(result, ensure_ascii=False)[:30_000],
+                "completed",
+                round((time.monotonic() - started) * 1000),
+            )
+        except Exception as exc:
+            return (
+                json.dumps({"error": str(exc)[:1_000]}, ensure_ascii=False),
+                "failed",
+                round((time.monotonic() - started) * 1000),
+            )
+
     def switch_1688_purchase_model(self, model: str) -> None:
         if self.state is not ConversationState.IDLE:
             raise RuntimeError("模型回复期间不能切换模型")
@@ -291,13 +402,14 @@ def create_1688_purchase_agent(
     session_store: PurchaseSessionStore,
     cwd: Path,
 ) -> PurchaseAgentRuntime:
-    prompt_builder = PurchasePromptBuilder()
+    prompt_builder = PurchasePromptBuilder(cwd.resolve() / "skills")
     if provider_runtime.provider == CODEX_PROVIDER:
-        provider_adapter: PurchaseProviderAdapter = CodexPurchaseProviderAdapter(
+        from .providers import CodexResponsesProviderAdapter
+
+        provider_adapter: PurchaseProviderAdapter = CodexResponsesProviderAdapter(
             provider_runtime,
             config,
             prompt_builder,
-            cwd=cwd,
         )
     elif provider_runtime.provider == OPENAI_PROVIDER:
         from .providers import OpenAIResponsesProviderAdapter
@@ -317,4 +429,5 @@ def create_1688_purchase_agent(
         session_store=session_store,
         prompt_builder=prompt_builder,
         provider_adapter=provider_adapter,
+        cwd=cwd.resolve(),
     )
