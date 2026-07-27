@@ -14,6 +14,7 @@ from typing import Sequence
 
 from .config import (
     CODEX_PROVIDER,
+    CODEX_RUNTIME_APP_SERVER,
     MODEL_ENV,
     OPENAI_PROVIDER,
     PROVIDER_ENV,
@@ -23,8 +24,13 @@ from .config import (
     get_1688_purchase_config_path,
     load_1688_purchase_config,
     save_1688_purchase_config,
+    with_1688_codex_runtime,
     with_1688_purchase_model,
     with_1688_purchase_provider,
+)
+from .codex_runtime import (
+    install_1688_codex_runtime_mcp,
+    parse_1688_codex_runtime,
 )
 from .credentials import (
     OPENAI_API_KEY_ENV,
@@ -482,6 +488,9 @@ def _show_1688_chat_help() -> None:
         "\n会话内命令：\n"
         "  /model               选择本 Session 使用的模型\n"
         "  /model MODEL         直接切换模型\n"
+        "  /codex-runtime       查看 Codex Runtime\n"
+        "  /codex-runtime auto 使用项目自有连续工具循环（默认）\n"
+        "  /codex-runtime on    下一 Session 改用 Codex app-server\n"
         "  /session             显示当前 Session ID\n"
         "  /stop                空闲时无动作；生成中请按 Ctrl+C\n"
         "  /help                显示帮助\n"
@@ -510,6 +519,44 @@ def _switch_1688_chat_model(
         print(f"本 Session 已切换到：{selected}")
 
 
+def _switch_1688_codex_runtime(
+    agent: PurchaseAgentRuntime,
+    requested_runtime: str | None,
+) -> None:
+    current = agent.config.openai_runtime
+    if requested_runtime is None:
+        print(f"当前 Codex Runtime：{current}")
+        print("auto 不启动 app-server；codex_app_server 会创建 Codex Task。")
+        return
+    if agent.provider_runtime.provider != CODEX_PROVIDER:
+        print("Codex Runtime 只适用于 Local Codex / ChatGPT 供应商。")
+        return
+    try:
+        selected = parse_1688_codex_runtime(requested_runtime)
+    except ValueError as exc:
+        print(str(exc))
+        return
+
+    updated = with_1688_codex_runtime(agent.config, selected)
+    if selected == CODEX_RUNTIME_APP_SERVER:
+        # 和 Hermes 一样，在启用时检查 app-server 并注册项目 MCP 回调。
+        resolve_1688_purchase_provider(
+            updated,
+            cli_provider=agent.provider_runtime.provider,
+            cli_model=agent.provider_runtime.model,
+        )
+        try:
+            mcp_path = install_1688_codex_runtime_mcp(cwd=Path.cwd())
+        except RuntimeError as exc:
+            print(f"警告：{exc}")
+        else:
+            print(f"项目工具已注册到 Codex app-server：{mcp_path}")
+    path = save_1688_purchase_config(updated)
+    print(f"Codex Runtime：{current} → {selected}")
+    print(f"配置文件：{path}")
+    print("下一次新建 Session 生效；当前 Session 保持原 Runtime。")
+
+
 def _route_1688_chat_command(
     text: str,
     agent: PurchaseAgentRuntime,
@@ -530,6 +577,11 @@ def _route_1688_chat_command(
             _switch_1688_chat_model(agent, argument or None)
         except PurchaseProviderError as exc:
             print(f"切换模型失败：{exc}")
+    elif command == "/codex-runtime":
+        try:
+            _switch_1688_codex_runtime(agent, argument or None)
+        except PurchaseProviderError as exc:
+            print(f"切换 Codex Runtime 失败：{exc}")
     else:
         print(f"未知命令：{command}。输入 /help 查看命令。")
     return True
