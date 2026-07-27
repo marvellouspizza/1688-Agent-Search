@@ -10,6 +10,7 @@ from typing import Any
 
 
 APP_HOME_ENV = "AGENT_SEARCH_1688_HOME"
+SKILL_ROOT_ENV = "AGENT_SEARCH_1688_SKILL_ROOT"
 MODEL_ENV = "AGENT_SEARCH_1688_MODEL"
 PROVIDER_ENV = "AGENT_SEARCH_1688_PROVIDER"
 CODEX_PROVIDER = "local-codex-chatgpt"
@@ -17,6 +18,12 @@ OPENAI_PROVIDER = "openai-api"
 DEFAULT_PROVIDER = CODEX_PROVIDER
 DEFAULT_MODEL = "gpt-5.6-sol"
 SUPPORTED_PROVIDERS = (CODEX_PROVIDER, OPENAI_PROVIDER)
+CODEX_RUNTIME_AUTO = "auto"
+CODEX_RUNTIME_APP_SERVER = "codex_app_server"
+SUPPORTED_CODEX_RUNTIMES = (
+    CODEX_RUNTIME_AUTO,
+    CODEX_RUNTIME_APP_SERVER,
+)
 
 
 class PurchaseConfigError(RuntimeError):
@@ -30,19 +37,31 @@ def get_1688_purchase_home() -> Path:
     return Path.home() / ".1688-agent-search"
 
 
+def resolve_1688_skill_root(cwd: Path | None = None) -> Path:
+    """解析项目自有 Skill 目录；不读取本机 Codex Skill。"""
+
+    overridden = os.environ.get(SKILL_ROOT_ENV)
+    if overridden:
+        return Path(overridden).expanduser().resolve()
+    if cwd is not None:
+        project_root = cwd.resolve() / "skills"
+        if project_root.is_dir():
+            return project_root
+    return get_1688_purchase_home() / "skills"
+
+
 @dataclass(frozen=True)
 class PurchaseConfig:
     provider: str | None = None
     model: str | None = None
+    openai_runtime: str = CODEX_RUNTIME_AUTO
     database_path: str | None = None
     request_timeout_seconds: int = 300
     max_context_characters: int = 120_000
     searxng_base_url: str = "http://127.0.0.1:8888"
     searxng_timeout_seconds: int = 30
-    # A Skill-guided research request commonly needs: list Skills, read one or
-    # more Skills, search, then inspect a result.  Five turns can cut that
-    # normal sequence off before the model gets a chance to answer.
-    max_tool_rounds: int = 10
+    # Matches Hermes' default per-turn tool-calling iteration budget.
+    max_iterations: int = 500
 
     @property
     def resolved_database_path(self) -> Path:
@@ -60,12 +79,13 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
     allowed = {
         "provider",
         "model",
+        "openai_runtime",
         "database_path",
         "request_timeout_seconds",
         "max_context_characters",
         "searxng_base_url",
         "searxng_timeout_seconds",
-        "max_tool_rounds",
+        "max_iterations",
     }
     unknown = sorted(set(data) - allowed)
     if unknown:
@@ -74,6 +94,7 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
     for field_name in (
         "provider",
         "model",
+        "openai_runtime",
         "database_path",
         "searxng_base_url",
     ):
@@ -84,7 +105,7 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         "request_timeout_seconds",
         "max_context_characters",
         "searxng_timeout_seconds",
-        "max_tool_rounds",
+        "max_iterations",
     ):
         if field_name in data and type(data[field_name]) is not int:
             raise PurchaseConfigError(f"{field_name} 必须是整数")
@@ -94,6 +115,10 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         raise PurchaseConfigError("provider 不能为空")
     if config.model is not None and not config.model.strip():
         raise PurchaseConfigError("model 不能为空")
+    if config.openai_runtime not in SUPPORTED_CODEX_RUNTIMES:
+        raise PurchaseConfigError(
+            "openai_runtime 必须是 auto 或 codex_app_server"
+        )
     if config.request_timeout_seconds <= 0:
         raise PurchaseConfigError("request_timeout_seconds 必须大于 0")
     if config.max_context_characters <= 0:
@@ -102,8 +127,8 @@ def _validate_1688_purchase_config(data: dict[str, Any]) -> PurchaseConfig:
         raise PurchaseConfigError("searxng_timeout_seconds 必须大于 0")
     if not config.searxng_base_url.strip():
         raise PurchaseConfigError("searxng_base_url 不能为空")
-    if not 1 <= config.max_tool_rounds <= 10:
-        raise PurchaseConfigError("max_tool_rounds 必须在 1 到 10 之间")
+    if config.max_iterations <= 0:
+        raise PurchaseConfigError("max_iterations 必须大于 0")
     return config
 
 
@@ -158,3 +183,12 @@ def with_1688_purchase_provider(
     if provider not in SUPPORTED_PROVIDERS:
         raise PurchaseConfigError(f"不支持的供应商：{provider}")
     return replace(config, provider=provider, model=model)
+
+
+def with_1688_codex_runtime(
+    config: PurchaseConfig,
+    runtime: str,
+) -> PurchaseConfig:
+    if runtime not in SUPPORTED_CODEX_RUNTIMES:
+        raise PurchaseConfigError(f"不支持的 Codex Runtime：{runtime}")
+    return replace(config, openai_runtime=runtime)

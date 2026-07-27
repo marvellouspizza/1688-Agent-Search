@@ -9,7 +9,12 @@ from pathlib import Path
 import time
 from typing import Callable, Protocol
 
-from .config import CODEX_PROVIDER, OPENAI_PROVIDER, PurchaseConfig
+from .config import (
+    CODEX_PROVIDER,
+    OPENAI_PROVIDER,
+    PurchaseConfig,
+    resolve_1688_skill_root,
+)
 from .models import (
     ChatResult,
     ChatStatus,
@@ -71,7 +76,9 @@ class PurchaseAgentRuntime:
         self.state = ConversationState.IDLE
         # Use the application root supplied by the entry point.  `Path.cwd()`
         # is the user's shell directory and is not a reliable project root.
-        self.tool_registry = build_1688_tool_registry(skill_root=cwd / "skills")
+        self.tool_registry = build_1688_tool_registry(
+            skill_root=resolve_1688_skill_root(cwd)
+        )
 
     def create_or_restore_1688_purchase_session(
         self,
@@ -265,10 +272,9 @@ class PurchaseAgentRuntime:
         ]
         input_items.append({"role": "user", "content": user_input})
         tool_definitions = self.tool_registry.definitions()
-        latest: ProviderTurnResult | None = None
         seen_calls: set[tuple[str, str]] = set()
         sequence = 0
-        for _round in range(self.config.max_tool_rounds + 1):
+        for _iteration in range(self.config.max_iterations):
             latest = runner(
                 input_items=input_items,
                 tool_definitions=tool_definitions,
@@ -277,8 +283,6 @@ class PurchaseAgentRuntime:
             )
             if not latest.tool_calls:
                 return latest
-            if _round >= self.config.max_tool_rounds:
-                raise PurchaseProviderError("工具调用已达到本轮上限")
             input_items.extend(latest.response_items)
             for call in latest.tool_calls:
                 sequence += 1
@@ -318,7 +322,58 @@ class PurchaseAgentRuntime:
                     duration_ms=duration_ms,
                 )
                 input_items.append({"type": "function_call_output", "call_id": call.call_id, "output": output})
-        raise PurchaseProviderError("工具循环未产生最终回复")
+
+        # Hermes gives the model one final, tool-free request after the
+        # iteration budget is exhausted so a long research turn still returns
+        # the evidence collected so far instead of failing the whole request.
+        input_items.append(
+            {
+                "role": "user",
+                "content": (
+                    "You've reached the maximum number of tool-calling "
+                    "iterations allowed. Please provide a final response "
+                    "summarizing what you've found and accomplished so far, "
+                    "without calling any more tools."
+                ),
+            }
+        )
+        latest_summary: ProviderTurnResult | None = None
+        try:
+            for _attempt in range(2):
+                buffered_deltas: list[str] = []
+                summary = runner(
+                    input_items=input_items,
+                    tool_definitions=[],
+                    on_stream_started=on_stream_started,
+                    on_delta=buffered_deltas.append,
+                )
+                latest_summary = summary
+                if not summary.tool_calls and summary.content.strip():
+                    if buffered_deltas:
+                        for delta in buffered_deltas:
+                            on_delta(delta)
+                    else:
+                        on_delta(summary.content)
+                    return summary
+            fallback = (
+                "I reached the iteration limit and couldn't generate a "
+                "summary."
+            )
+        except PurchaseProviderInterrupted:
+            raise
+        except Exception as exc:
+            fallback = (
+                f"I reached the maximum iterations "
+                f"({self.config.max_iterations}) but couldn't summarize. "
+                f"Error: {str(exc)[:1_000]}"
+            )
+        on_delta(fallback)
+        return replace(
+            latest_summary or latest,
+            content=fallback,
+            tool_calls=[],
+            response_items=[],
+        )
 
     def _dispatch_1688_tool_call(
         self,
@@ -402,15 +457,31 @@ def create_1688_purchase_agent(
     session_store: PurchaseSessionStore,
     cwd: Path,
 ) -> PurchaseAgentRuntime:
-    prompt_builder = PurchasePromptBuilder(cwd.resolve() / "skills")
+    prompt_builder = PurchasePromptBuilder(resolve_1688_skill_root(cwd))
     if provider_runtime.provider == CODEX_PROVIDER:
-        from .providers import CodexResponsesProviderAdapter
+        if provider_runtime.api_mode == "codex_app_server":
+            from .codex_runtime import install_1688_codex_runtime_mcp
 
-        provider_adapter: PurchaseProviderAdapter = CodexResponsesProviderAdapter(
-            provider_runtime,
-            config,
-            prompt_builder,
-        )
+            try:
+                install_1688_codex_runtime_mcp(cwd=cwd.resolve())
+            except RuntimeError as exc:
+                raise PurchaseProviderError(str(exc)) from exc
+            provider_adapter: PurchaseProviderAdapter = (
+                CodexPurchaseProviderAdapter(
+                    provider_runtime,
+                    config,
+                    prompt_builder,
+                    cwd=cwd.resolve(),
+                )
+            )
+        else:
+            from .providers import CodexResponsesProviderAdapter
+
+            provider_adapter = CodexResponsesProviderAdapter(
+                provider_runtime,
+                config,
+                prompt_builder,
+            )
     elif provider_runtime.provider == OPENAI_PROVIDER:
         from .providers import OpenAIResponsesProviderAdapter
 

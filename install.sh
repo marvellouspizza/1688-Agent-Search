@@ -68,11 +68,16 @@ cp -R "$AS1688_SOURCE_DIR/src" "$AS1688_STAGE/src"
     --output "$AS1688_STAGE/as1688.pyz"
 chmod 700 "$AS1688_STAGE/as1688.pyz"
 mv "$AS1688_STAGE/as1688.pyz" "$AS1688_INSTALL_ROOT/as1688.pyz"
+if [ -d "$AS1688_SOURCE_DIR/skills" ]; then
+    mkdir -p "$AS1688_INSTALL_ROOT/skills"
+    cp -R "$AS1688_SOURCE_DIR/skills/." "$AS1688_INSTALL_ROOT/skills/"
+fi
 
 AS1688_WRAPPER="$AS1688_STAGE/as1688"
 {
     echo '#!/bin/sh'
     echo 'AS1688_RUNTIME=${AS1688_INSTALL_ROOT:-"$HOME/.local/share/as1688"}'
+    echo 'export AGENT_SEARCH_1688_SKILL_ROOT="$AS1688_RUNTIME/skills"'
     echo 'exec python3 "$AS1688_RUNTIME/as1688.pyz" "$@"'
 } > "$AS1688_WRAPPER"
 chmod 700 "$AS1688_WRAPPER"
