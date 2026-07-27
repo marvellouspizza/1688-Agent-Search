@@ -115,6 +115,7 @@ class PurchaseAgentRuntime:
         session_id: str | None = None,
         *,
         on_delta: Callable[[str], None] | None = None,
+        on_thinking: Callable[[bool], None] | None = None,
     ) -> ChatResult:
         """稳定核心入口：AgentRuntime.chat(user_input, session_id)。"""
 
@@ -129,6 +130,7 @@ class PurchaseAgentRuntime:
         assert self.session is not None
 
         delta_callback = on_delta or (lambda _delta: None)
+        thinking_callback = on_thinking or (lambda _active: None)
         partial_parts: list[str] = []
         user_message_id = ""
         request_id = ""
@@ -167,6 +169,7 @@ class PurchaseAgentRuntime:
                     )
 
             def handle_delta(delta: str) -> None:
+                thinking_callback(False)
                 partial_parts.append(delta)
                 delta_callback(delta)
 
@@ -176,14 +179,21 @@ class PurchaseAgentRuntime:
                     request_id=request_id,
                     on_stream_started=handle_stream_started,
                     on_delta=handle_delta,
+                    on_thinking=thinking_callback,
                 )
             else:
-                provider_result = self.provider_adapter.stream_1688_model_reply(
-                    user_input=user_input,
-                    user_message_id=user_message.id,
-                    on_stream_started=handle_stream_started,
-                    on_delta=handle_delta,
-                )
+                thinking_callback(True)
+                try:
+                    provider_result = (
+                        self.provider_adapter.stream_1688_model_reply(
+                            user_input=user_input,
+                            user_message_id=user_message.id,
+                            on_stream_started=handle_stream_started,
+                            on_delta=handle_delta,
+                        )
+                    )
+                finally:
+                    thinking_callback(False)
             if self.state is ConversationState.REQUESTING:
                 handle_stream_started()
             assistant = self.session_store.save_1688_purchase_reply(
@@ -250,6 +260,7 @@ class PurchaseAgentRuntime:
                 error=str(exc),
             )
         finally:
+            thinking_callback(False)
             self.state = ConversationState.IDLE
         return result
 
@@ -260,6 +271,7 @@ class PurchaseAgentRuntime:
         request_id: str,
         on_stream_started: Callable[[], None],
         on_delta: Callable[[str], None],
+        on_thinking: Callable[[bool], None],
     ) -> ProviderTurnResult:
         """Run project-owned function calls; no Codex native capability is used."""
         runner = getattr(self.provider_adapter, "run_1688_model_turn")
@@ -275,12 +287,16 @@ class PurchaseAgentRuntime:
         seen_calls: set[tuple[str, str]] = set()
         sequence = 0
         for _iteration in range(self.config.max_iterations):
-            latest = runner(
-                input_items=input_items,
-                tool_definitions=tool_definitions,
-                on_stream_started=on_stream_started,
-                on_delta=on_delta,
-            )
+            on_thinking(True)
+            try:
+                latest = runner(
+                    input_items=input_items,
+                    tool_definitions=tool_definitions,
+                    on_stream_started=on_stream_started,
+                    on_delta=on_delta,
+                )
+            finally:
+                on_thinking(False)
             if not latest.tool_calls:
                 return latest
             input_items.extend(latest.response_items)
@@ -341,12 +357,16 @@ class PurchaseAgentRuntime:
         try:
             for _attempt in range(2):
                 buffered_deltas: list[str] = []
-                summary = runner(
-                    input_items=input_items,
-                    tool_definitions=[],
-                    on_stream_started=on_stream_started,
-                    on_delta=buffered_deltas.append,
-                )
+                on_thinking(True)
+                try:
+                    summary = runner(
+                        input_items=input_items,
+                        tool_definitions=[],
+                        on_stream_started=on_stream_started,
+                        on_delta=buffered_deltas.append,
+                    )
+                finally:
+                    on_thinking(False)
                 latest_summary = summary
                 if not summary.tool_calls and summary.content.strip():
                     if buffered_deltas:
