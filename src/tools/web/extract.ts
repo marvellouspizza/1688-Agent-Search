@@ -27,13 +27,15 @@ export async function validatePublicUrl(value: string): Promise<string> {
   if (!(url.protocol === "http:" || url.protocol === "https:") || !url.hostname || url.username || url.password) {
     throw new Error("url 必须是公开 HTTP(S) 地址");
   }
-  if (url.hostname.toLowerCase() === "localhost") throw new Error("禁止访问本机地址");
+  const hostname = stripIpv6Brackets(url.hostname);
+  if (hostname.toLowerCase() === "localhost") throw new Error("禁止访问本机地址");
   let addresses: readonly { address: string; family: number }[];
-  if (isIP(url.hostname)) {
-    addresses = [{ address: url.hostname, family: isIP(url.hostname) }];
+  const literalAddressFamily = isIP(hostname);
+  if (literalAddressFamily) {
+    addresses = [{ address: hostname, family: literalAddressFamily }];
   } else {
     try {
-      addresses = await lookup(url.hostname, { all: true, verbatim: true });
+      addresses = await lookup(hostname, { all: true, verbatim: true });
     } catch (error) {
       throw new Error("无法解析目标域名", { cause: error });
     }
@@ -110,6 +112,10 @@ function htmlToText(html: string): string {
     .join("\n");
 }
 
+function stripIpv6Brackets(hostname: string): string {
+  return hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+}
+
 function buildBlockedAddresses(): BlockList {
   const list = new BlockList();
   for (const [address, prefix] of [
@@ -120,7 +126,7 @@ function buildBlockedAddresses(): BlockList {
   ] as const) list.addSubnet(address, prefix, "ipv4");
   for (const [address, prefix] of [
     ["::", 128], ["::1", 128], ["fc00::", 7], ["fe80::", 10], ["ff00::", 8],
-    ["2001:db8::", 32], ["::ffff:0:0", 96],
+    ["2001:db8::", 32],
   ] as const) list.addSubnet(address, prefix, "ipv6");
   return list;
 }
