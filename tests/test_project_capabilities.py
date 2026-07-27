@@ -38,7 +38,7 @@ class ProjectCapabilitiesTests(unittest.TestCase):
                 _validate_public_url(url)
 
     def test_default_tool_budget_covers_a_skill_research_sequence(self):
-        self.assertEqual(PurchaseConfig().max_tool_rounds, 10)
+        self.assertEqual(PurchaseConfig().max_iterations, 500)
         root = Path(__file__).parents[1] / "skills"
         prompt = PurchasePromptBuilder(root).build_1688_purchase_base_instructions()
         self.assertIn("# Tool-use enforcement", prompt)
