@@ -8,8 +8,8 @@ from agent_search_1688.models import ProviderRuntime
 from agent_search_1688.providers.codex_responses import (
     CodexResponsesProviderAdapter,
     _responses_tools,
-    load_local_codex_chatgpt_auth,
 )
+from agent_search_1688.providers.codex_auth import load_local_codex_chatgpt_auth
 from agent_search_1688.config import PurchaseConfig
 from agent_search_1688.prompt_builder import PurchasePromptBuilder
 from agent_search_1688.session_store import PurchaseSessionStore
@@ -36,7 +36,10 @@ class CodexResponsesTests(unittest.TestCase):
                 "auth_mode": "chatgpt",
                 "tokens": {"access_token": "access", "refresh_token": "refresh"},
             }))
-            with patch("agent_search_1688.providers.codex_responses.CODEX_AUTH_PATH", auth_path):
+            with patch(
+                "agent_search_1688.providers.codex_auth.CODEX_AUTH_PATH",
+                auth_path,
+            ):
                 self.assertEqual(load_local_codex_chatgpt_auth(), {
                     "access_token": "access", "refresh_token": "refresh",
                 })
