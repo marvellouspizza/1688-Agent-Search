@@ -122,6 +122,26 @@ test("Codex Responses timeout is a provider failure, not a user interruption", a
   );
 });
 
+test("Codex Responses streaming timeout is a provider failure, not a user interruption", async () => {
+  const adapter = new CodexResponsesProviderAdapter(runtime, { ...config, requestTimeoutSeconds: 0.01 }, {
+    buildBaseInstructions: () => "system",
+    buildContext: () => "",
+  }, {
+    fetchImpl: async (_input, init) => hangingSseResponse(init),
+    auth: {
+      load: () => ({ accessToken: "token", refreshToken: "refresh" }),
+      refresh: async () => ({ accessToken: "new", refreshToken: "refresh" }),
+      headers: () => ({ Authorization: "Bearer token" }),
+    },
+  });
+  adapter.openSession(session, []);
+  await assert.rejects(
+    adapter.runModelTurn({ inputItems: [], toolDefinitions: [], onStreamStarted: () => {}, onDelta: () => {} }),
+    (error: unknown) => error instanceof PurchaseProviderError
+      && !(error instanceof PurchaseProviderInterrupted) && /超时/.test(error.message),
+  );
+});
+
 test("Codex auth refresh preserves the ISO timestamp schema", async () => {
   const codexHome = mkdtempSync(join(tmpdir(), "as1688-codex-auth-"));
   const authPath = join(codexHome, "auth.json");
@@ -145,4 +165,13 @@ function abortedFetch(init?: RequestInit): Promise<Response> {
     if (!signal) return reject(new Error("missing signal"));
     signal.addEventListener("abort", () => reject(signal.reason), { once: true });
   });
+}
+
+function hangingSseResponse(init?: RequestInit): Response {
+  const signal = init?.signal;
+  return new Response(new ReadableStream({
+    start(controller) {
+      signal?.addEventListener("abort", () => controller.error(new DOMException("aborted", "AbortError")), { once: true });
+    },
+  }), { status: 200 });
 }

@@ -33,3 +33,23 @@ test("installer builds a runnable Node CLI and uninstaller preserves user data",
   assert.equal(existsSync(installRoot), false);
   assert.equal(existsSync(join(userData, "keep.txt")), true);
 });
+
+test("uninstaller rejects a home directory with a trailing slash", () => {
+  const root = mkdtempSync(join(tmpdir(), "as1688-uninstall-safety-"));
+  const syntheticHome = join(root, "home");
+  mkdirSync(syntheticHome, { recursive: true });
+  const marker = join(syntheticHome, "keep.txt");
+  writeFileSync(marker, "keep");
+  const removed = spawnSync("sh", [resolve("uninstall.sh")], {
+    cwd: resolve("."),
+    env: {
+      ...process.env,
+      HOME: syntheticHome,
+      AS1688_INSTALL_ROOT: `${syntheticHome}/`,
+      AS1688_BIN_DIR: join(root, "bin"),
+    },
+    encoding: "utf8",
+  });
+  assert.notEqual(removed.status, 0);
+  assert.equal(existsSync(marker), true);
+});
