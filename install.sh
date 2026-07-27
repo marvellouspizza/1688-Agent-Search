@@ -2,9 +2,18 @@
 
 set -eu
 
+normalize_as1688_directory() {
+    AS1688_DIRECTORY=$1
+    while [ "$AS1688_DIRECTORY" != "/" ] && [ "${AS1688_DIRECTORY%/}" != "$AS1688_DIRECTORY" ]; do
+        AS1688_DIRECTORY=${AS1688_DIRECTORY%/}
+    done
+    printf '%s\n' "$AS1688_DIRECTORY"
+}
+
 AS1688_SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-AS1688_INSTALL_ROOT=${AS1688_INSTALL_ROOT:-"$HOME/.local/share/as1688"}
-AS1688_BIN_DIR=${AS1688_BIN_DIR:-"$HOME/.local/bin"}
+AS1688_HOME_ROOT=$(normalize_as1688_directory "$HOME")
+AS1688_INSTALL_ROOT=$(normalize_as1688_directory "${AS1688_INSTALL_ROOT:-"$AS1688_HOME_ROOT/.local/share/as1688"}")
+AS1688_BIN_DIR=$(normalize_as1688_directory "${AS1688_BIN_DIR:-"$AS1688_HOME_ROOT/.local/bin"}")
 AS1688_REPOSITORY=${AS1688_REPOSITORY:-"marvellouspizza/1688-Agent-Search"}
 AS1688_REF=${AS1688_REF:-"main"}
 AS1688_DOWNLOAD_DIR=""
@@ -35,7 +44,17 @@ case "$AS1688_INSTALL_ROOT" in
     *) fail_as1688_install "安装目录必须是绝对路径：$AS1688_INSTALL_ROOT" ;;
 esac
 case "$AS1688_INSTALL_ROOT" in
-    ""|/|"$HOME"|*//*|*/../*|*/..|*/./*|*/.) fail_as1688_install "安装目录不安全：$AS1688_INSTALL_ROOT" ;;
+    ""|/|"$AS1688_HOME_ROOT"|*//*|*/../*|*/..|*/./*|*/.) fail_as1688_install "安装目录不安全：$AS1688_INSTALL_ROOT" ;;
+esac
+if [ "$(dirname -- "$AS1688_INSTALL_ROOT")" = "/" ]; then
+    fail_as1688_install "安装目录不能位于文件系统根目录下：$AS1688_INSTALL_ROOT"
+fi
+case "$AS1688_BIN_DIR" in
+    /*) ;;
+    *) fail_as1688_install "命令目录必须是绝对路径：$AS1688_BIN_DIR" ;;
+esac
+case "$AS1688_BIN_DIR" in
+    ""|/|"$AS1688_HOME_ROOT"|*//*|*/../*|*/..|*/./*|*/.) fail_as1688_install "命令目录不安全：$AS1688_BIN_DIR" ;;
 esac
 
 if [ ! -f "$AS1688_SOURCE_DIR/package.json" ] || [ ! -f "$AS1688_SOURCE_DIR/src/cli-entry.ts" ]; then
@@ -68,8 +87,11 @@ if [ ! -f "$AS1688_SOURCE_DIR/uninstall.sh" ]; then
 fi
 
 AS1688_INSTALL_PARENT=$(dirname -- "$AS1688_INSTALL_ROOT")
-mkdir -p "$AS1688_INSTALL_PARENT" "$AS1688_BIN_DIR"
-chmod 700 "$AS1688_BIN_DIR"
+mkdir -p "$AS1688_INSTALL_PARENT"
+if [ ! -d "$AS1688_BIN_DIR" ]; then
+    mkdir -p "$AS1688_BIN_DIR"
+    chmod 700 "$AS1688_BIN_DIR"
+fi
 AS1688_STAGE=$(mktemp -d "$AS1688_INSTALL_PARENT/.as1688-install.XXXXXX")
 
 cp "$AS1688_SOURCE_DIR/package.json" "$AS1688_STAGE/package.json"
