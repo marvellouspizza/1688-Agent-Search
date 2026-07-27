@@ -70,9 +70,12 @@ search:
 {
   "searxng_base_url": "http://127.0.0.1:8888",
   "searxng_timeout_seconds": 30,
-  "max_tool_rounds": 5
+  "max_iterations": 500
 }
 ```
+
+`max_iterations` 与 Hermes 一致，限制单轮对话中的模型/工具迭代次数；达到
+上限时会关闭工具并让模型根据已经取得的结果给出最终总结，不会直接把整轮标记为失败。
 
 SearXNG 仅提供搜索索引。查找 1688 商家时，程序会提供候选页面链接和搜索摘要，
 不会把结果表述为库存、价格、发票或商家身份已核验。
