@@ -163,8 +163,16 @@ export class CodexResponsesProviderAdapter {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const controller = new AbortController();
       this.#activeController = controller;
-      const timeout = setTimeout(() => controller.abort(new Error("Codex Responses 请求超时")), this.#config.requestTimeoutSeconds * 1_000);
+      let timedOut = false;
+      const timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort(new Error("Codex Responses 请求超时"));
+      }, this.#config.requestTimeoutSeconds * 1_000);
       timeout.unref();
+      const releaseRequest = (): void => {
+        clearTimeout(timeout);
+        if (this.#activeController === controller) this.#activeController = undefined;
+      };
       let response: Response;
       try {
         response = await this.#fetch(CODEX_RESPONSES_URL, {
@@ -174,12 +182,13 @@ export class CodexResponsesProviderAdapter {
           signal: controller.signal,
         });
       } catch (error) {
-        clearTimeout(timeout);
+        releaseRequest();
+        if (timedOut) throw new PurchaseProviderError("Codex Responses 请求超时", { cause: error });
         if (controller.signal.aborted) throw new PurchaseProviderInterrupted("用户已停止回复", { cause: error });
         throw new PurchaseProviderError(`无法连接 Codex Responses：${safeError(error)}`, { cause: error });
       }
       if (response.status === 401) {
-        clearTimeout(timeout);
+        releaseRequest();
         const fresh = this.#auth.load();
         if (fresh.accessToken !== credentials.accessToken) {
           credentials = fresh;
@@ -192,7 +201,7 @@ export class CodexResponsesProviderAdapter {
         }
       }
       if (!response.ok) {
-        clearTimeout(timeout);
+        releaseRequest();
         throw new PurchaseProviderError(await codexHttpError(response));
       }
       onStreamStarted();
@@ -203,8 +212,7 @@ export class CodexResponsesProviderAdapter {
         }
         return completed;
       } finally {
-        clearTimeout(timeout);
-        if (this.#activeController === controller) this.#activeController = undefined;
+        releaseRequest();
       }
     }
     throw new PurchaseProviderError("Codex Responses 身份验证失败，请运行：codex login");

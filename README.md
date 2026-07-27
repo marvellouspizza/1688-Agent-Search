@@ -149,7 +149,7 @@ sh install.sh
 浏览器工具首次使用前需要安装 Chromium：
 
 ```bash
-npm exec --prefix ~/.local/share/as1688 playwright install chromium
+npm exec --prefix ~/.local/share/as1688 -- playwright install chromium
 ```
 
 如果安装器提示更新了 `PATH`，重新打开一次终端即可。
@@ -157,7 +157,7 @@ npm exec --prefix ~/.local/share/as1688 playwright install chromium
 卸载程序但保留配置和会话：
 
 ```bash
-./uninstall.sh
+sh ~/.local/share/as1688/uninstall.sh
 ```
 
 ## 首次启动

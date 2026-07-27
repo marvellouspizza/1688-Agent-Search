@@ -203,8 +203,8 @@ export class CodexAppServerTransport {
   }
 }
 
-export function buildCodexTurnRequest(threadId: string, userInput: string): JsonObject {
-  return { threadId, input: [{ type: "text", text: userInput }] };
+export function buildCodexTurnRequest(threadId: string, userInput: string, model: string): JsonObject {
+  return { threadId, input: [{ type: "text", text: userInput }], model };
 }
 
 export class CodexStreamCollector {
@@ -283,6 +283,7 @@ export class CodexAppServerProviderAdapter {
   readonly transport: CodexAppServerTransport;
   readonly #cwd: string;
   readonly #approvalPrompt: (command: string, reason: string) => Promise<"accept" | "decline">;
+  #resumeThreadId: string | undefined;
 
   constructor(providerRuntime: ProviderRuntime, config: PurchaseConfig, options: CodexAppServerAdapterOptions) {
     if (!providerRuntime.codexPath) throw new PurchaseProviderError("Codex Provider 缺少 codex 命令路径");
@@ -300,7 +301,8 @@ export class CodexAppServerProviderAdapter {
 
   openSession(session: PurchaseSession, _history: readonly Message[]): string {
     this.threadId = undefined;
-    return `codex_pending_${session.id}`;
+    this.#resumeThreadId = resumableCodexThreadId(session.providerThreadId);
+    return this.#resumeThreadId ?? `codex_pending_${session.id}`;
   }
 
   switchModel(model: string): void {
@@ -317,7 +319,10 @@ export class CodexAppServerProviderAdapter {
     void options.userMessageId;
     const threadId = await this.#ensureThread();
     try {
-      const result = await this.transport.request("turn/start", buildCodexTurnRequest(threadId, options.userInput));
+      const result = await this.transport.request(
+        "turn/start",
+        buildCodexTurnRequest(threadId, options.userInput, this.providerRuntime.model),
+      );
       const turnId = isRecord(result.turn) && typeof result.turn.id === "string" ? result.turn.id : undefined;
       if (!turnId) throw new PurchaseInvalidResponse("Codex 未返回有效 turn id");
       this.activeTurnId = turnId;
@@ -352,12 +357,23 @@ export class CodexAppServerProviderAdapter {
   async #ensureThread(): Promise<string> {
     if (this.threadId) return this.threadId;
     await this.transport.start();
-    const result = await this.transport.request("thread/start", { cwd: this.#cwd });
+    const result = this.#resumeThreadId
+      ? await this.transport.request("thread/resume", {
+        threadId: this.#resumeThreadId,
+        cwd: this.#cwd,
+        model: this.providerRuntime.model,
+      })
+      : await this.transport.request("thread/start", {
+        cwd: this.#cwd,
+        model: this.providerRuntime.model,
+      });
     const thread = isRecord(result.thread) ? result.thread : undefined;
     const threadId = (thread?.id ?? thread?.sessionId ?? result.sessionId ?? result.threadId);
     if (typeof threadId !== "string" || !threadId) throw new PurchaseInvalidResponse("Codex 未返回有效 thread id");
-    if (typeof result.model === "string" && result.model) this.actualModel = result.model;
+    const actualModel = result.model ?? thread?.model;
+    if (typeof actualModel === "string" && actualModel) this.actualModel = actualModel;
     this.threadId = threadId;
+    this.#resumeThreadId = undefined;
     return threadId;
   }
 
@@ -382,6 +398,13 @@ export class CodexAppServerProviderAdapter {
       this.transport.respondError(request.id, -32601, `不支持的 Codex Server 请求：${String(method)}`);
     }
   }
+}
+
+function resumableCodexThreadId(value: string | undefined): string | undefined {
+  if (!value || ["codex_pending_", "codex_local_", "openai_local_", "resp_"].some((prefix) => value.startsWith(prefix))) {
+    return undefined;
+  }
+  return value;
 }
 
 class AsyncMessageQueue {

@@ -160,7 +160,11 @@ export class OpenAIResponsesProviderAdapter {
     if (!this.providerRuntime.credential) throw new PurchaseProviderError("OpenAI API Key 尚未配置");
     const controller = new AbortController();
     this.#activeController = controller;
-    const timeout = setTimeout(() => controller.abort(new Error("OpenAI 请求超时")), this.#config.requestTimeoutSeconds * 1_000);
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort(new Error("OpenAI 请求超时"));
+    }, this.#config.requestTimeoutSeconds * 1_000);
     timeout.unref();
     let response: Response;
     try {
@@ -190,6 +194,7 @@ export class OpenAIResponsesProviderAdapter {
       return { ...result, providerThreadId: this.threadId };
     } catch (error) {
       if (error instanceof PurchaseProviderError) throw error;
+      if (timedOut) throw new PurchaseProviderError("OpenAI 请求超时", { cause: error });
       if (controller.signal.aborted || isAbortError(error)) {
         throw new PurchaseProviderInterrupted("用户已中止模型请求", { cause: error });
       }

@@ -7,7 +7,14 @@ AS1688_BIN_DIR=${AS1688_BIN_DIR:-"$HOME/.local/bin"}
 AS1688_USER_DATA=${AGENT_SEARCH_1688_HOME:-"$HOME/.1688-agent-search"}
 
 case "$AS1688_INSTALL_ROOT" in
-    ""|/|"$HOME")
+    /*) ;;
+    *)
+        echo "卸载失败：安装目录必须是绝对路径：$AS1688_INSTALL_ROOT" >&2
+        exit 1
+        ;;
+esac
+case "$AS1688_INSTALL_ROOT" in
+    ""|/|"$HOME"|*//*|*/../*|*/..|*/./*|*/.)
         echo "卸载失败：安装目录不安全：$AS1688_INSTALL_ROOT" >&2
         exit 1
         ;;
