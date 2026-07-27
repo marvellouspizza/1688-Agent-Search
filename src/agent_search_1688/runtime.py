@@ -330,20 +330,30 @@ class PurchaseAgentRuntime:
                 ),
             }
         )
+        latest_summary: ProviderTurnResult | None = None
         try:
             for _attempt in range(2):
+                buffered_deltas: list[str] = []
                 summary = runner(
                     input_items=input_items,
                     tool_definitions=[],
                     on_stream_started=on_stream_started,
-                    on_delta=on_delta,
+                    on_delta=buffered_deltas.append,
                 )
+                latest_summary = summary
                 if not summary.tool_calls and summary.content.strip():
+                    if buffered_deltas:
+                        for delta in buffered_deltas:
+                            on_delta(delta)
+                    else:
+                        on_delta(summary.content)
                     return summary
             fallback = (
                 "I reached the iteration limit and couldn't generate a "
                 "summary."
             )
+        except PurchaseProviderInterrupted:
+            raise
         except Exception as exc:
             fallback = (
                 f"I reached the maximum iterations "
@@ -352,7 +362,7 @@ class PurchaseAgentRuntime:
             )
         on_delta(fallback)
         return replace(
-            latest,
+            latest_summary or latest,
             content=fallback,
             tool_calls=[],
             response_items=[],
