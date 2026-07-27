@@ -50,6 +50,7 @@ export class SkillCatalog {
     const entry = this.list().find((item) => item.name === name);
     if (!entry) throw new Error(`未找到项目 Skill：${name}`);
     const candidate = resolve(entry.root, relativePath);
+    assertContained(entry.root, candidate);
     let resolved: string;
     try {
       resolved = realpathSync(candidate);
