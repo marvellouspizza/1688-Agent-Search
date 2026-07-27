@@ -1,7 +1,8 @@
 # 1688 Agent Search
 
-面向 1688 智能采购项目的终端 Agent。默认运行时与 Hermes 一样由项目自己
-执行连续工具调用；不会为了模型请求启动 Codex app-server：
+面向 1688 智能采购项目的 TypeScript/Node.js 终端 Agent。默认运行时与
+Hermes 一样由项目自己执行连续工具调用；不会为了模型请求启动 Codex
+app-server：
 
 ```text
 启动 as1688
@@ -119,7 +120,7 @@ SOUL 是每轮发送给模型的稳定身份与行为偏好。和 Hermes 一样�
 
 ## 安装
 
-支持 macOS 和 Linux，需要 Python 3.9 或更高版本。
+支持 macOS 和 Linux，需要 Node.js 24 或更高版本以及 npm。
 
 直接在线安装：
 
@@ -137,13 +138,19 @@ sh install.sh
 
 安装器会：
 
-1. 检查 Python 版本。
-2. 把源码复制到用户目录后构建独立 ZipApp。
-3. 安装运行包到 `~/.local/share/as1688/as1688.pyz`。
+1. 检查 Node.js 和 npm 版本。
+2. 在临时目录安装锁定依赖并编译 TypeScript。
+3. 安装编译产物、生产依赖和项目 Skill 到 `~/.local/share/as1688`。
 4. 创建全局命令 `~/.local/bin/as1688`。
 5. 必要时把 `~/.local/bin` 加入终端 `PATH`。
 
 安装路径不包含下载目录和用户名硬编码。安装完成后，原下载目录可以移动。
+
+浏览器工具首次使用前需要安装 Chromium：
+
+```bash
+npm exec --prefix ~/.local/share/as1688 playwright install chromium
+```
 
 如果安装器提示更新了 `PATH`，重新打开一次终端即可。
 
@@ -235,41 +242,43 @@ OpenAI API Key 也可以只通过 `OPENAI_API_KEY` 环境变量提供。
 
 ## 代码阅读顺序
 
-1. `src/agent_search_1688/cli.py`：供应商、模型和终端交互。
-2. `src/agent_search_1688/runtime.py`：统一 Agent 状态机。
-3. `src/agent_search_1688/providers/`：Provider 解析和模型适配器。
-   - `codex_responses.py`：默认的直连 Codex Responses 适配器。
-   - `codex.py`：供应商解析和可选 Codex app-server 适配器。
-   - `openai.py`：OpenAI Responses API 适配器。
-5. `src/agent_search_1688/credentials.py`：API Key 安全存取。
-6. `src/agent_search_1688/session_store.py`：SQLite Session 和事务。
-7. `src/agent_search_1688/models.py`：统一消息与结果结构。
-8. `src/agent_search_1688/prompt_builder.py`：三层上下文。
-9. `src/agent_search_1688/codex_runtime.py`：可选 app-server 切换和 MCP 注册。
-10. `src/agent_search_1688/tools/`：工具注册表、MCP Server 与网页搜索后端。
+1. `src/cli.ts`：供应商、模型和终端交互。
+2. `src/runtime.ts`：统一 Agent 状态机与连续工具循环。
+3. `src/providers/`：Provider 解析和模型适配器。
+   - `codex-responses.ts`：默认的直连 Codex Responses 适配器。
+   - `codex-app-server.ts`：可选 Codex app-server 适配器。
+   - `openai.ts`：OpenAI Responses API 适配器。
+4. `src/credentials.ts`：API Key 安全存取。
+5. `src/session-store.ts`：SQLite Session 和事务。
+6. `src/models.ts`：统一消息与结果结构。
+7. `src/prompt-builder.ts`：三层上下文。
+8. `src/codex-runtime.ts`：可选 app-server 切换和 MCP 注册。
+9. `src/tools/`：工具注册表、MCP Server 与网页搜索后端。
 
 工具目录按能力分类：
 
 ```text
 tools/
-├── registry.py       工具注册与调度
-├── mcp_server.py     app-server 可选路线使用的 stdio MCP 适配器
+├── registry.ts       工具注册与调度
+├── mcp-server.ts     app-server 可选路线使用的 stdio MCP 适配器
 ├── browser/          项目受控浏览器工具
 └── web/              web_search 与 web_extract
 ```
 
 稳定核心入口仍然是：
 
-```python
-PurchaseAgentRuntime.chat(user_input, session_id)
+```typescript
+PurchaseAgentRuntime.chat(userInput, sessionId)
 ```
 
 ## 测试分支
 
-为了让 `main` 分支保持精简，完整测试套件保存在
-`archive/with-tests` 分支：
+为了让生产修改分支保持精简，完整测试套件保存在对应的独立测试分支。
+本次 TypeScript 迁移的测试分支为 `agent/python-to-js-tests`：
 
 ```bash
-git switch archive/with-tests
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+git switch agent/python-to-js-tests
+npm ci
+npm run build
+node --test tests/*.test.ts
 ```

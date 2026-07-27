@@ -133,7 +133,7 @@ export class CodexAppServerTransport {
       child.once("error", (error) => this.#handleExit(new PurchaseProviderError("无法启动 Codex app-server", { cause: error })));
       child.once("exit", (code) => this.#handleExit(new PurchaseProviderError(`Codex app-server 已退出（状态码：${String(code)}）`)));
       await this.request("initialize", {
-        clientInfo: { name: "agent_search_1688", title: "1688 Agent Search", version: "1.0.0" },
+        clientInfo: { name: "agent-search-1688", title: "1688 Agent Search", version: "1.0.0" },
       });
       this.notify("initialized", {});
     } catch (error) {
