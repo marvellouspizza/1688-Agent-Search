@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import sys
 from typing import Any
 
+from ..config import resolve_1688_skill_root
 from .registry import ToolRegistry
 from .web.search import build_1688_tool_registry
 
@@ -42,14 +44,27 @@ def handle_mcp_message(message: dict[str, Any], registry: ToolRegistry) -> dict[
             result = registry.dispatch(name, arguments)
         except (KeyError, ValueError) as exc:
             return _response(request_id, {"content": [{"type": "text", "text": str(exc)}], "isError": True})
-        except Exception:
-            return _response(request_id, {"content": [{"type": "text", "text": "web_search 执行失败"}], "isError": True})
+        except Exception as exc:
+            return _response(
+                request_id,
+                {
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": f"{name} 执行失败：{str(exc)[:1_000]}",
+                        }
+                    ],
+                    "isError": True,
+                },
+            )
         return _response(request_id, {"content": [{"type": "text", "text": json.dumps(result, ensure_ascii=False)}]})
     return _error(request_id, -32601, f"不支持的 MCP 方法：{method}")
 
 
 def run_1688_mcp_server() -> int:
-    registry = build_1688_tool_registry()
+    registry = build_1688_tool_registry(
+        skill_root=resolve_1688_skill_root(Path.cwd())
+    )
     for raw_line in sys.stdin:
         try:
             message = json.loads(raw_line)

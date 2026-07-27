@@ -1,6 +1,7 @@
 # 1688 Agent Search
 
-面向 1688 智能采购项目的终端 Agent。当前版本支持普通文字对话和受控网页搜索：
+面向 1688 智能采购项目的终端 Agent。默认运行时与 Hermes 一样由项目自己
+执行连续工具调用；不会为了模型请求启动 Codex app-server：
 
 ```text
 启动 as1688
@@ -10,9 +11,9 @@
 → 获取并选择模型
 → 创建 Agent 与 Session
 → 组装上下文
-→ 转换为供应商 API 请求
-→ 需要公开信息时调用唯一允许的 `web_search` 工具
-→ 本机 SearXNG 返回搜索结果
+→ 直接请求模型 Responses 后端
+→ 模型按任务调用项目 Skill、Web 或 Browser 工具
+→ 项目执行工具并把结果回传给模型，直到模型给出最终答复
 → 接收并显示流式回复
 → 保存会话
 → 等待下一次输入
@@ -22,10 +23,25 @@
 
 ### Local Codex / ChatGPT
 
-复用本机 Codex 的 ChatGPT 登录和模型目录。选择这个供应商时才需要：
+复用本机 Codex 的 ChatGPT 登录。模型目录和普通对话都直接访问 Codex
+Responses 后端，不会创建 Codex App Task。选择这个供应商时才需要：
 
-- Codex CLI 0.144.x
+- Codex CLI
 - `codex login` 使用 ChatGPT 登录
+
+默认配置为 `openai_runtime: auto`。如需像 Hermes 的可选路线一样把整个
+Session 交给 Codex app-server，可在会话中执行：
+
+```text
+/codex-runtime on
+```
+
+该设置从下一次新建 Session 生效，并会创建可在 Codex App 中看到的持久
+Codex Task。切回项目自有工具循环：
+
+```text
+/codex-runtime auto
+```
 
 ### OpenAI API
 
@@ -41,11 +57,19 @@
 钥匙串更新或删除失败时会明确报错，不会静默改用另一份旧凭证。
 API Key 不会写入普通 `config.json` 或 SQLite 会话库。
 
-## 本地 SearXNG 搜索
+## 项目 Skill、Web 与 Browser
 
-本机 Codex Provider 会把本项目的工具注册表作为 `1688-tools` stdio MCP
-Server 提供给模型。Codex 自带网页搜索、终端、文件、浏览器、插件、Skill 和
-用户已有 MCP 均保持禁用；模型只能调用本项目注册的只读 `web_search`。
+默认 `auto` Runtime 由项目把 `skills_list`、`skill_view`、`web_search`、
+`web_extract` 和 `browser_*` 定义直接交给模型，并执行连续 function call
+循环。项目 Skill 来自安装目录中的独立 `skills/`，不依赖 Codex App 的
+全局 Skill。
+
+显式启用 `codex_app_server` 时，行为与 Hermes 的可选 Runtime 一致：Codex
+app-server 接管该 Session 的工具循环，并通过 `1688-tools` MCP 回调访问上述
+项目工具；Codex 自身已有的 Skill、Plugin、Browser 和 MCP 也由 Codex 自己
+管理，不再由项目逐项禁用。
+
+`web_search` 的索引后端是本地 SearXNG：
 
 默认连接地址为 `http://127.0.0.1:8888`。若 SearXNG 运行在 OrbStack，须把
 容器端口发布到 macOS 宿主机，例如：
@@ -214,23 +238,24 @@ OpenAI API Key 也可以只通过 `OPENAI_API_KEY` 环境变量提供。
 1. `src/agent_search_1688/cli.py`：供应商、模型和终端交互。
 2. `src/agent_search_1688/runtime.py`：统一 Agent 状态机。
 3. `src/agent_search_1688/providers/`：Provider 解析和模型适配器。
-   - `codex.py`：本机 Codex / ChatGPT 适配器。
+   - `codex_responses.py`：默认的直连 Codex Responses 适配器。
+   - `codex.py`：供应商解析和可选 Codex app-server 适配器。
    - `openai.py`：OpenAI Responses API 适配器。
 5. `src/agent_search_1688/credentials.py`：API Key 安全存取。
 6. `src/agent_search_1688/session_store.py`：SQLite Session 和事务。
 7. `src/agent_search_1688/models.py`：统一消息与结果结构。
 8. `src/agent_search_1688/prompt_builder.py`：三层上下文。
-9. `src/agent_search_1688/tools/`：受控工具注册表、MCP Server 与网页搜索后端。
+9. `src/agent_search_1688/codex_runtime.py`：可选 app-server 切换和 MCP 注册。
+10. `src/agent_search_1688/tools/`：工具注册表、MCP Server 与网页搜索后端。
 
 工具目录按能力分类：
 
 ```text
 tools/
 ├── registry.py       工具注册与调度
-├── mcp_server.py     Codex 使用的 stdio MCP 适配器
-└── web/
-    ├── search.py     web_search 工具定义
-    └── searxng.py    SearXNG 后端客户端
+├── mcp_server.py     app-server 可选路线使用的 stdio MCP 适配器
+├── browser/          项目受控浏览器工具
+└── web/              web_search 与 web_extract
 ```
 
 稳定核心入口仍然是：

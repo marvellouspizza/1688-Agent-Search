@@ -9,7 +9,12 @@ from pathlib import Path
 import time
 from typing import Callable, Protocol
 
-from .config import CODEX_PROVIDER, OPENAI_PROVIDER, PurchaseConfig
+from .config import (
+    CODEX_PROVIDER,
+    OPENAI_PROVIDER,
+    PurchaseConfig,
+    resolve_1688_skill_root,
+)
 from .models import (
     ChatResult,
     ChatStatus,
@@ -71,7 +76,9 @@ class PurchaseAgentRuntime:
         self.state = ConversationState.IDLE
         # Use the application root supplied by the entry point.  `Path.cwd()`
         # is the user's shell directory and is not a reliable project root.
-        self.tool_registry = build_1688_tool_registry(skill_root=cwd / "skills")
+        self.tool_registry = build_1688_tool_registry(
+            skill_root=resolve_1688_skill_root(cwd)
+        )
 
     def create_or_restore_1688_purchase_session(
         self,
@@ -450,15 +457,25 @@ def create_1688_purchase_agent(
     session_store: PurchaseSessionStore,
     cwd: Path,
 ) -> PurchaseAgentRuntime:
-    prompt_builder = PurchasePromptBuilder(cwd.resolve() / "skills")
+    prompt_builder = PurchasePromptBuilder(resolve_1688_skill_root(cwd))
     if provider_runtime.provider == CODEX_PROVIDER:
-        from .providers import CodexResponsesProviderAdapter
+        if provider_runtime.api_mode == "codex_app_server":
+            provider_adapter: PurchaseProviderAdapter = (
+                CodexPurchaseProviderAdapter(
+                    provider_runtime,
+                    config,
+                    prompt_builder,
+                    cwd=cwd.resolve(),
+                )
+            )
+        else:
+            from .providers import CodexResponsesProviderAdapter
 
-        provider_adapter: PurchaseProviderAdapter = CodexResponsesProviderAdapter(
-            provider_runtime,
-            config,
-            prompt_builder,
-        )
+            provider_adapter = CodexResponsesProviderAdapter(
+                provider_runtime,
+                config,
+                prompt_builder,
+            )
     elif provider_runtime.provider == OPENAI_PROVIDER:
         from .providers import OpenAIResponsesProviderAdapter
 
