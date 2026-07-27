@@ -1,14 +1,19 @@
-#!/usr/bin/env python3
-"""无需安装即可启动 1688 Agent Search CLI。"""
+#!/bin/sh
 
-from pathlib import Path
-import sys
+set -eu
 
+AS1688_SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+command -v node >/dev/null 2>&1 || {
+    echo "启动失败：需要 Node.js 24 或更高版本" >&2
+    exit 1
+}
 
-from agent_search_1688.cli import main  # noqa: E402
+if [ ! -x "$AS1688_SOURCE_DIR/node_modules/.bin/tsc" ]; then
+    echo "正在安装开发依赖..." >&2
+    (cd "$AS1688_SOURCE_DIR" && npm ci --no-audit --no-fund)
+fi
 
-
-if __name__ == "__main__":
-    main()
+(cd "$AS1688_SOURCE_DIR" && npm run build --silent)
+export AGENT_SEARCH_1688_SKILL_ROOT="$AS1688_SOURCE_DIR/skills"
+exec node "$AS1688_SOURCE_DIR/dist/cli-entry.js" "$@"
