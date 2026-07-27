@@ -6,7 +6,7 @@ import {
   tokenUsageFromCodex,
   validateConversationRoles,
   type Message,
-} from "../src/models.ts";
+} from "../dist/models.js";
 
 function message(role: Message["role"], id: string): Message {
   return {

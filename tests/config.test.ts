@@ -11,8 +11,8 @@ import {
   withCodexRuntime,
   withPurchaseModel,
   withPurchaseProvider,
-} from "../src/config.ts";
-import { loadOrSeedSoul } from "../src/soul.ts";
+} from "../dist/config.js";
+import { loadOrSeedSoul } from "../dist/soul.js";
 
 test("configuration defaults preserve the Python runtime contract", () => {
   const root = mkdtempSync(join(tmpdir(), "as1688-config-"));
@@ -70,7 +70,7 @@ test("immutable helpers validate providers, models, and runtimes", () => {
 test("SOUL is seeded once and existing content wins", () => {
   const root = mkdtempSync(join(tmpdir(), "as1688-soul-"));
   const first = loadOrSeedSoul({ appHome: root });
-  assert.match(first, /1688/);
+  assert.match(first, /采购调研/);
   writeFileSync(join(root, "SOUL.md"), "custom soul\n", "utf8");
   assert.equal(loadOrSeedSoul({ appHome: root }), "custom soul");
 });
