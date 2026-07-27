@@ -60,6 +60,11 @@ _CODEX_SUBPROCESS_ALWAYS_STRIP = {
     "GITHUB_APP_ID",
     "GITHUB_APP_PRIVATE_KEY_PATH",
     "GITHUB_APP_INSTALLATION_ID",
+    "GATEWAY_RELAY_ID",
+    "GATEWAY_RELAY_SECRET",
+    "GATEWAY_RELAY_DELIVERY_KEY",
+    "GATEWAY_ALLOWED_USERS",
+    "GATEWAY_ALLOW_ALL_USERS",
     "TELEGRAM_BOT_TOKEN",
     "DISCORD_BOT_TOKEN",
     "SLACK_BOT_TOKEN",
@@ -67,6 +72,7 @@ _CODEX_SUBPROCESS_ALWAYS_STRIP = {
     "SLACK_SIGNING_SECRET",
     "HASS_TOKEN",
     "EMAIL_PASSWORD",
+    "HERMES_DASHBOARD_SESSION_TOKEN",
     "MODAL_TOKEN_ID",
     "MODAL_TOKEN_SECRET",
     "DAYTONA_API_KEY",
@@ -81,7 +87,9 @@ def _build_1688_codex_subprocess_environment() -> dict[str, str]:
         environment.pop(key, None)
     for key in list(environment):
         upper = key.upper()
-        if upper.startswith("AUXILIARY_") and upper.endswith(
+        if key.startswith("_HERMES_FORCE_"):
+            environment.pop(key, None)
+        elif upper.startswith("AUXILIARY_") and upper.endswith(
             ("_API_KEY", "_BASE_URL")
         ):
             environment.pop(key, None)
@@ -472,40 +480,6 @@ def build_1688_codex_turn_request(
     }
 
 
-def build_1688_codex_history_items(
-    history: list[Message],
-) -> list[dict[str, Any]]:
-    """把恢复历史保留为 Responses API 的真实 User/Assistant 角色。"""
-
-    items: list[dict[str, Any]] = []
-    for message in history:
-        if message.role.value == "user":
-            items.append(
-                {
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": message.content}
-                    ],
-                }
-            )
-        elif message.role.value == "assistant":
-            items.append(
-                {
-                    "type": "message",
-                    "role": "assistant",
-                    "content": [
-                        {"type": "output_text", "text": message.content}
-                    ],
-                }
-            )
-        else:
-            raise PurchaseInvalidResponse(
-                f"普通对话不能恢复角色：{message.role.value}"
-            )
-    return items
-
-
 class CodexStreamCollector:
     """按顺序拼接 Codex 增量，并只在 turn/completed 后确认完成。"""
 
@@ -623,7 +597,6 @@ class CodexPurchaseProviderAdapter:
         self.thread_id: str | None = None
         self.actual_model = provider_runtime.model
         self.active_turn_id: str | None = None
-        self._pending_history: list[Message] = []
 
     def open_1688_purchase_session(
         self,
@@ -632,7 +605,7 @@ class CodexPurchaseProviderAdapter:
     ) -> str:
         """只绑定本地 Session；与 Hermes 一样到首个 Turn 才启动 Codex。"""
 
-        self._pending_history = list(history)
+        del history
         self.thread_id = None
         return f"codex_pending_{session.id}"
 
@@ -657,18 +630,6 @@ class CodexPurchaseProviderAdapter:
         actual_model = result.get("model")
         if isinstance(actual_model, str) and actual_model:
             self.actual_model = actual_model
-        if self._pending_history:
-            history_items = build_1688_codex_history_items(
-                self._pending_history
-            )
-            self.transport.request_1688_codex(
-                "thread/inject_items",
-                {
-                    "threadId": thread_id,
-                    "items": history_items,
-                },
-            )
-        self._pending_history = []
         self.thread_id = thread_id
         return thread_id
 
