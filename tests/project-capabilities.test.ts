@@ -71,6 +71,8 @@ test("public URL validation handles public IPv4 and IPv4-mapped IPv6 without wea
     await validatePublicUrl("https://[::ffff:203.119.169.229]/product"),
     "https://[::ffff:cb77:a9e5]/product",
   );
+  await assert.rejects(() => validatePublicUrl("http://10.0.0.1/private"), /私有或保留/);
+  await assert.rejects(() => validatePublicUrl("http://[::ffff:10.0.0.1]/private"), /私有或保留/);
   await assert.rejects(() => validatePublicUrl("http://[::ffff:127.0.0.1]/private"), /私有或保留/);
 });
 
